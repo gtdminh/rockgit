@@ -1,0 +1,8 @@
+[package]
+name = "RockGit"
+version = "0.1.0"
+edition = "2024"
+[dependencies]
+cacao = { version = "0.3", features = ["appkit"] }
+objc = "0.2"
+objc_id = "0.1"
