@@ -87,6 +87,12 @@ fn fake_commit(id: &str, parents: &[&str]) -> Commit {
     }
 }
 
+fn fake_commit_with_refs(id: &str, parents: &[&str], refs: Vec<RefDecoration>) -> Commit {
+    let mut commit = fake_commit(id, parents);
+    commit.refs = refs;
+    commit
+}
+
 // ---- repository lifecycle ---------------------------------------------------------------
 
 #[test]
@@ -408,6 +414,46 @@ fn graph_layout_branch_and_merge() {
     assert_eq!(rows[3].width, 1);
     // The side branch keeps a different color than the main line.
     assert_ne!(rows[0].outgoing[0].color, rows[0].outgoing[1].color);
+}
+
+#[test]
+fn graph_layout_keeps_main_branch_on_leftmost_lane() {
+    let rows = build_graph(vec![
+        fake_commit_with_refs(
+            "F2",
+            &["F1"],
+            vec![RefDecoration {
+                name: "feature/demo".into(),
+                full_name: "refs/heads/feature/demo".into(),
+                kind: DecorationKind::LocalBranch,
+                is_head: true,
+            }],
+        ),
+        fake_commit_with_refs(
+            "M",
+            &["B", "F1"],
+            vec![RefDecoration {
+                name: "main".into(),
+                full_name: "refs/heads/main".into(),
+                kind: DecorationKind::LocalBranch,
+                is_head: false,
+            }],
+        ),
+        fake_commit("B", &["A"]),
+        fake_commit("F1", &["A"]),
+        fake_commit("A", &[]),
+    ]);
+
+    let by_id = |id: &str| rows.iter().find(|row| row.commit.id == id).unwrap();
+
+    assert_eq!(by_id("M").lane, 0);
+    assert!(by_id("M").is_mainline);
+    assert_eq!(by_id("B").lane, 0);
+    assert!(by_id("B").is_mainline);
+    assert_eq!(by_id("A").lane, 0);
+    assert!(by_id("A").is_mainline);
+    assert_ne!(by_id("F1").lane, 0);
+    assert!(!by_id("F1").is_mainline);
 }
 
 #[test]

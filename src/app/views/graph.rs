@@ -5,10 +5,10 @@ use cacao::objc::{msg_send, sel, sel_impl};
 
 use crate::app::{
     actions::AppAction,
-    model::{AppModel, CommitNode, RefKind, SharedModel},
+    model::{AppModel, CommitNode, RefBadge, RefKind, SharedModel},
     send,
     views::{
-        rows::{CommitRow, CommitRowData, MAX_GRAPH_WIDTH, MAX_PILLS, MIN_GRAPH_WIDTH, ROW_HEIGHT},
+        rows::{CommitPill, CommitRow, CommitRowData, MAX_GRAPH_WIDTH, MAX_PILLS, MIN_GRAPH_WIDTH, ROW_HEIGHT},
         theme::{lane_rgb, ref_rgb, Rgb},
     },
 };
@@ -18,12 +18,17 @@ const LANE_WIDTH: f64 = 16.;
 const LANE_OFFSET: f64 = 14.;
 const MIN_LANE_WIDTH: f64 = 5.;
 const NODE_RADIUS: f64 = 5.;
+const MAX_PILL_CHARS: usize = 24;
 
 /// A drawing primitive in row-local coordinates (origin top-left).
 enum Prim {
-    Line { from: (f64, f64), to: (f64, f64), rgb: Rgb },
-    Curve { from: (f64, f64), c1: (f64, f64), c2: (f64, f64), to: (f64, f64), rgb: Rgb },
+    Line { from: (f64, f64), to: (f64, f64), rgb: Rgb, is_mainline: bool },
+    Curve { from: (f64, f64), c1: (f64, f64), c2: (f64, f64), to: (f64, f64), rgb: Rgb, is_mainline: bool },
 }
+
+const DEFAULT_LINE_WIDTH: f64 = 2.;
+const MAINLINE_LINE_WIDTH: f64 = 3.;
+const MAINLINE_NODE_RADIUS: f64 = 6.;
 
 /// Horizontal layout of the graph column, derived from the number of lanes in use.
 #[derive(Clone, Copy)]
@@ -72,10 +77,11 @@ fn row_primitives(geo: GraphGeometry, rows: &[&CommitNode], positions: &[Option<
             // Branch edges run down the child's lane, merge edges down the parent's lane.
             let edge_lane = child.lane.max(parent.lane);
             let rgb = lane_rgb(edge_lane);
+            let is_mainline = child.is_mainline && parent.is_mainline && child.lane == 0 && parent.lane == 0;
             let (xc, xp, xe) = (geo.x(child.lane), geo.x(parent.lane), geo.x(edge_lane));
 
             if child_pos < row && row < parent_pos {
-                prims.push(Prim::Line { from: (xe, top), to: (xe, bottom), rgb });
+                prims.push(Prim::Line { from: (xe, top), to: (xe, bottom), rgb, is_mainline });
             } else if row == child_pos {
                 if parent.lane > child.lane {
                     // Merge: leave the child lane and curve into the parent lane.
@@ -85,9 +91,10 @@ fn row_primitives(geo: GraphGeometry, rows: &[&CommitNode], positions: &[Option<
                         c2: (xp, mid),
                         to: (xp, bottom),
                         rgb,
+                        is_mainline,
                     });
                 } else {
-                    prims.push(Prim::Line { from: (xc, mid), to: (xc, bottom), rgb });
+                    prims.push(Prim::Line { from: (xc, mid), to: (xc, bottom), rgb, is_mainline });
                 }
             } else if row == parent_pos {
                 if child.lane > parent.lane {
@@ -98,9 +105,10 @@ fn row_primitives(geo: GraphGeometry, rows: &[&CommitNode], positions: &[Option<
                         c2: (xp, top),
                         to: (xp, mid),
                         rgb,
+                        is_mainline,
                     });
                 } else {
-                    prims.push(Prim::Line { from: (xp, top), to: (xp, mid), rgb });
+                    prims.push(Prim::Line { from: (xp, top), to: (xp, mid), rgb, is_mainline });
                 }
             }
         }
@@ -109,7 +117,7 @@ fn row_primitives(geo: GraphGeometry, rows: &[&CommitNode], positions: &[Option<
     prims
 }
 
-fn graph_image(geo: GraphGeometry, prims: Vec<Prim>, node_lane: usize, is_head: bool) -> Image {
+fn graph_image(geo: GraphGeometry, prims: Vec<Prim>, node_lane: usize, is_head: bool, is_mainline: bool) -> Image {
     let node_x = geo.x(node_lane);
     let node_rgb = lane_rgb(node_lane);
     let size = (geo.width, ROW_HEIGHT);
@@ -119,17 +127,38 @@ fn graph_image(geo: GraphGeometry, prims: Vec<Prim>, node_lane: usize, is_head: 
         move |_rect, ctx| {
             let channel = |v: u8| f64::from(v) / 255.;
 
-            ctx.set_line_width(2.);
             for prim in &prims {
                 match prim {
-                    Prim::Line { from, to, rgb } => {
+                    Prim::Line {
+                        from,
+                        to,
+                        rgb,
+                        is_mainline,
+                    } => {
+                        ctx.set_line_width(if *is_mainline {
+                            MAINLINE_LINE_WIDTH
+                        } else {
+                            DEFAULT_LINE_WIDTH
+                        });
                         ctx.set_rgb_stroke_color(channel(rgb.0), channel(rgb.1), channel(rgb.2), 1.);
                         ctx.begin_path();
                         ctx.move_to_point(from.0, from.1);
                         ctx.add_line_to_point(to.0, to.1);
                         ctx.stroke_path();
                     },
-                    Prim::Curve { from, c1, c2, to, rgb } => {
+                    Prim::Curve {
+                        from,
+                        c1,
+                        c2,
+                        to,
+                        rgb,
+                        is_mainline,
+                    } => {
+                        ctx.set_line_width(if *is_mainline {
+                            MAINLINE_LINE_WIDTH
+                        } else {
+                            DEFAULT_LINE_WIDTH
+                        });
                         ctx.set_rgb_stroke_color(channel(rgb.0), channel(rgb.1), channel(rgb.2), 1.);
                         ctx.begin_path();
                         ctx.move_to_point(from.0, from.1);
@@ -140,19 +169,24 @@ fn graph_image(geo: GraphGeometry, prims: Vec<Prim>, node_lane: usize, is_head: 
             }
 
             let mid = ROW_HEIGHT / 2.;
+            let node_radius = if is_mainline { MAINLINE_NODE_RADIUS } else { NODE_RADIUS };
             let rect = |r: f64| {
                 CGRect::new(&CGPoint::new(node_x - r, mid - r), &CGSize::new(r * 2., r * 2.))
             };
             if is_head {
                 // HEAD: hollow node with a thick ring.
                 ctx.set_rgb_fill_color(1., 1., 1., 1.);
-                ctx.fill_ellipse_in_rect(rect(NODE_RADIUS + 1.));
-                ctx.set_line_width(3.);
+                ctx.fill_ellipse_in_rect(rect(node_radius + 1.));
+                ctx.set_line_width(if is_mainline {
+                    MAINLINE_LINE_WIDTH + 1.
+                } else {
+                    MAINLINE_LINE_WIDTH
+                });
                 ctx.set_rgb_stroke_color(channel(node_rgb.0), channel(node_rgb.1), channel(node_rgb.2), 1.);
-                ctx.stroke_ellipse_in_rect(rect(NODE_RADIUS));
+                ctx.stroke_ellipse_in_rect(rect(node_radius));
             } else {
                 ctx.set_rgb_fill_color(channel(node_rgb.0), channel(node_rgb.1), channel(node_rgb.2), 1.);
-                ctx.fill_ellipse_in_rect(rect(NODE_RADIUS));
+                ctx.fill_ellipse_in_rect(rect(node_radius));
             }
             true
         },
@@ -160,19 +194,134 @@ fn graph_image(geo: GraphGeometry, prims: Vec<Prim>, node_lane: usize, is_head: 
 }
 
 /// Ref pills for a commit, honouring the "Show Remote Branches" toggle.
-fn pills_for(commit: &CommitNode, show_remote: bool) -> Vec<(String, Rgb)> {
+fn pills_for(commit: &CommitNode, show_remote: bool) -> Vec<CommitPill> {
     commit
         .refs
         .iter()
         .filter(|badge| show_remote || badge.kind != RefKind::RemoteBranch)
         .take(MAX_PILLS)
-        .map(|badge| (badge.label.clone(), ref_rgb(badge.kind)))
+        .map(commit_pill)
         .collect()
+}
+
+fn commit_pill(badge: &RefBadge) -> CommitPill {
+    let text = abbreviate_ref_label(&badge.label, MAX_PILL_CHARS);
+    CommitPill {
+        tooltip: (text != badge.label).then(|| badge.label.clone()),
+        text,
+        rgb: ref_rgb(badge.kind),
+    }
+}
+
+fn abbreviate_ref_label(label: &str, max_chars: usize) -> String {
+    let label_len = label.chars().count();
+    if label_len <= max_chars {
+        return label.to_owned();
+    }
+
+    let parts: Vec<&str> = label.split('/').collect();
+    if parts.len() > 1 {
+        if let (Some(root), Some(leaf)) = (parts.first(), parts.last()) {
+            let root_and_leaf = format!("{root}/…/{leaf}");
+            if root_and_leaf.chars().count() <= max_chars {
+                return root_and_leaf;
+            }
+
+            let leaf_only = format!("…/{leaf}");
+            if leaf_only.chars().count() <= max_chars {
+                return leaf_only;
+            }
+
+            if max_chars > 2 {
+                return format!("…/{}", abbreviate_middle(leaf, max_chars - 2));
+            }
+        }
+    }
+
+    abbreviate_middle(label, max_chars)
+}
+
+fn abbreviate_middle(text: &str, max_chars: usize) -> String {
+    let text_len = text.chars().count();
+    if text_len <= max_chars {
+        return text.to_owned();
+    }
+
+    if max_chars <= 1 {
+        return "…".to_owned();
+    }
+
+    let visible_chars = max_chars - 1;
+    let prefix_len = visible_chars / 2;
+    let suffix_len = visible_chars - prefix_len;
+    let chars: Vec<char> = text.chars().collect();
+    let prefix: String = chars[..prefix_len].iter().collect();
+    let suffix: String = chars[chars.len() - suffix_len..].iter().collect();
+    format!("{prefix}…{suffix}")
 }
 
 pub struct CommitList {
     model: SharedModel,
     view: Option<ListView>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{abbreviate_ref_label, pills_for};
+    use crate::app::model::{CommitNode, RefBadge, RefKind};
+
+    fn commit_with_refs(refs: Vec<RefBadge>) -> CommitNode {
+        CommitNode {
+            id: String::new(),
+            short_id: "abc1234".to_owned(),
+            summary: "summary".to_owned(),
+            author: "author".to_owned(),
+            relative_time: "now".to_owned(),
+            lane: 0,
+            parents: Vec::new(),
+            refs,
+            files: Vec::new(),
+            is_head: false,
+            is_mainline: false,
+        }
+    }
+
+    #[test]
+    fn abbreviates_graph_ref_labels_using_path_context_when_possible() {
+        let label = "origin/feature/docker/idp-release/goldenimage-python/python-idp-v3.13-2026_07_19-00cd882";
+        let abbreviated = abbreviate_ref_label(label, 24);
+
+        assert!(abbreviated.starts_with("…/python-idp"));
+        assert!(abbreviated.ends_with("00cd882"));
+        assert!(abbreviated.contains('…'));
+        assert!(abbreviated.chars().count() <= 24);
+    }
+
+    #[test]
+    fn graph_pills_include_full_name_tooltip_only_when_abbreviated() {
+        let commit = commit_with_refs(vec![
+            RefBadge {
+                label: "main".to_owned(),
+                kind: RefKind::LocalBranch,
+            },
+            RefBadge {
+                label: "origin/feature/docker/idp-release/goldenimage-python/python-idp-v3.13-2026_07_19-00cd882"
+                    .to_owned(),
+                kind: RefKind::RemoteBranch,
+            },
+        ]);
+
+        let pills = pills_for(&commit, true);
+
+        assert_eq!(pills[0].text, "main");
+        assert_eq!(pills[0].tooltip, None);
+        assert_eq!(
+            pills[1].tooltip.as_deref(),
+            Some("origin/feature/docker/idp-release/goldenimage-python/python-idp-v3.13-2026_07_19-00cd882")
+        );
+        assert!(pills[1].text.contains('…'));
+        assert!(pills[1].text.chars().count() <= 24);
+    }
 }
 
 impl CommitList {
@@ -218,7 +367,7 @@ impl ListViewDelegate for CommitList {
                 let summary = format!("{marker}{}", commit.summary);
 
                 cell.configure(&CommitRowData {
-                    graph: graph_image(geo, prims, commit.lane, commit.is_head),
+                    graph: graph_image(geo, prims, commit.lane, commit.is_head, commit.is_mainline),
                     graph_width: geo.width,
                     pills: &pills_for(commit, model.show_remote),
                     summary: &summary,

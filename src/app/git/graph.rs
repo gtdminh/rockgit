@@ -1,7 +1,9 @@
+use std::collections::{HashMap, HashSet};
+
 use super::client::GitClient;
 use super::error::GitResult;
 use super::history::LogOptions;
-use super::types::Commit;
+use super::types::{Commit, DecorationKind};
 
 /// A line segment between two lane columns within one graph row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -22,6 +24,7 @@ pub struct GraphRow {
     /// Column of the commit's node.
     pub lane: usize,
     pub color: usize,
+    pub is_mainline: bool,
     /// Number of columns this row needs.
     pub width: usize,
     /// Lines from the row above that end at this node (branches converging).
@@ -48,25 +51,108 @@ fn free_slot(lanes: &mut Vec<Option<Lane>>) -> usize {
     }
 }
 
+fn preferred_main_ref_score(commit: &Commit) -> Option<usize> {
+    commit
+        .refs
+        .iter()
+        .filter_map(|reference| {
+            let name = reference.name.as_str();
+            match (reference.kind, name) {
+                (DecorationKind::LocalBranch, "main") => Some(0),
+                (DecorationKind::LocalBranch, "master") => Some(1),
+                (DecorationKind::LocalBranch, "trunk") => Some(2),
+                (DecorationKind::RemoteBranch, "origin/main") => Some(3),
+                (DecorationKind::RemoteBranch, "origin/master") => Some(4),
+                (DecorationKind::RemoteBranch, "origin/trunk") => Some(5),
+                _ => None,
+            }
+        })
+        .min()
+}
+
+fn mainline_commit_ids(commits: &[Commit]) -> HashSet<String> {
+    let Some((tip_id, _)) = commits
+        .iter()
+        .filter_map(|commit| preferred_main_ref_score(commit).map(|score| (commit.id.as_str(), score)))
+        .min_by_key(|(_, score)| *score)
+    else {
+        return HashSet::new();
+    };
+
+    let first_parent_of: HashMap<&str, &str> = commits
+        .iter()
+        .filter_map(|commit| commit.parents.first().map(|parent| (commit.id.as_str(), parent.as_str())))
+        .collect();
+    let known_ids: HashSet<&str> = commits.iter().map(|commit| commit.id.as_str()).collect();
+
+    let mut ids = HashSet::new();
+    let mut current = tip_id;
+    while known_ids.contains(current) && ids.insert(current.to_owned()) {
+        let Some(parent) = first_parent_of.get(current).copied() else {
+            break;
+        };
+        current = parent;
+    }
+    ids
+}
+
+fn reserve_leftmost_lane_for_mainline(lanes: &mut Vec<Option<Lane>>, waiting: &mut [usize]) {
+    if waiting.contains(&0) {
+        return;
+    }
+
+    if lanes.is_empty() {
+        lanes.push(None);
+    }
+
+    if lanes[0].is_some() {
+        let slot = free_slot(lanes);
+        lanes[slot] = lanes[0].take();
+    }
+
+    if let Some(position) = waiting.iter().position(|&lane| lane != 0) {
+        let from = waiting[position];
+        lanes[0] = lanes[from].take();
+    }
+}
+
 /// Assigns lanes to commits. `commits` must be ordered children-before-parents (`LogOrder::Topo`).
 /// Parents missing from the slice (truncated history) simply leave their lane open at the bottom.
 pub fn build_graph(commits: Vec<Commit>) -> Vec<GraphRow> {
+    let mainline_ids = mainline_commit_ids(&commits);
     let mut lanes: Vec<Option<Lane>> = Vec::new();
     let mut next_color = 0usize;
     let mut rows = Vec::with_capacity(commits.len());
 
     for commit in commits {
+        let is_mainline = mainline_ids.contains(&commit.id);
         let width_before = lanes.len();
-        let waiting: Vec<usize> = lanes
+        let mut waiting: Vec<usize> = lanes
             .iter()
             .enumerate()
             .filter_map(|(i, l)| l.as_ref().filter(|l| l.id == commit.id).map(|_| i))
             .collect();
 
+        if is_mainline {
+            reserve_leftmost_lane_for_mainline(&mut lanes, &mut waiting);
+            if waiting.is_empty() {
+                waiting.push(0);
+            } else if let Some(first) = waiting.first_mut() {
+                *first = 0;
+            }
+        }
+
         let (lane, color) = match waiting.first() {
             Some(&i) => (i, lanes[i].as_ref().map_or(0, |l| l.color)),
             None => {
-                let i = free_slot(&mut lanes);
+                let i = if is_mainline {
+                    if lanes.is_empty() {
+                        lanes.push(None);
+                    }
+                    0
+                } else {
+                    free_slot(&mut lanes)
+                };
                 let color = next_color;
                 next_color += 1;
                 (i, color)
@@ -120,7 +206,16 @@ pub fn build_graph(commits: Vec<Commit>) -> Vec<GraphRow> {
             .max(lane + 1)
             .max(outgoing.iter().map(|e| e.to + 1).max().unwrap_or(0));
 
-        rows.push(GraphRow { commit, lane, color, width, incoming, passthrough, outgoing });
+        rows.push(GraphRow {
+            commit,
+            lane,
+            color,
+            is_mainline,
+            width,
+            incoming,
+            passthrough,
+            outgoing,
+        });
     }
     rows
 }

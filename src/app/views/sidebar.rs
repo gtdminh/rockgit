@@ -129,7 +129,7 @@ impl ListViewDelegate for BranchList {
                     } => {
                         let arrow = if *expanded { "▾" } else { "▸" };
                         let indent = "  ".repeat(*depth);
-                        cell.configure_tree_item(&format!("{indent}{arrow} {title}"), false, true);
+                        cell.configure_tree_item(&format!("{indent}{arrow} {title}"), false, true, None);
                     }
                     SidebarItem::Branch {
                         index,
@@ -151,12 +151,13 @@ impl ListViewDelegate for BranchList {
                             &format!("{indent}{icon} {title}"),
                             selected,
                             branch.is_current,
+                            Some(&branch.name),
                         );
                     }
                     SidebarItem::Tag { index, depth } => {
                         let indent = "  ".repeat(*depth);
                         if let Some(tag) = model.tags.get(*index) {
-                            cell.configure_tree_item(&format!("{indent}◇ {tag}"), false, false);
+                            cell.configure_tree_item(&format!("{indent}◇ {tag}"), false, false, None);
                         }
                     }
                 }

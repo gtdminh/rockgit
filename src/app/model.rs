@@ -176,6 +176,7 @@ pub struct CommitNode {
     pub refs: Vec<RefBadge>,
     pub files: Vec<FileChange>,
     pub is_head: bool,
+    pub is_mainline: bool,
 }
 
 #[derive(Clone, Debug)]

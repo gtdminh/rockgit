@@ -110,6 +110,7 @@ fn commit(
         refs,
         files,
         is_head,
+        is_mainline: lane == 0,
     }
 }
 

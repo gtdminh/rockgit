@@ -142,6 +142,7 @@ fn load_repo(path: &Path) -> Result<(LoadedRepo, Vec<String>), String> {
                 refs: ref_badges(&commit.refs),
                 files: Vec::new(),
                 is_head: commit.refs.iter().any(|r| r.is_head),
+                is_mainline: row.is_mainline,
             }
         })
         .collect();

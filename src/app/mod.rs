@@ -15,10 +15,12 @@ use cacao::appkit::window::{Window, WindowConfig};
 use cacao::appkit::{App, AppDelegate};
 use cacao::button::Button;
 use cacao::color::Color;
+use cacao::foundation::{nil, NSString};
 use cacao::layout::{Layout, LayoutConstraint};
 use cacao::listview::ListView;
 use cacao::notification_center::Dispatcher;
-use cacao::text::Label;
+use cacao::objc::{msg_send, sel, sel_impl};
+use cacao::text::{Label, LineBreakMode};
 use cacao::view::View;
 
 use actions::AppAction;
@@ -31,6 +33,60 @@ use views::{
     sidebar::{open_repository_button, BranchList, RepoList},
     toolbar::Toolbar,
 };
+
+const STATUS_BRANCH_MAX_CHARS: usize = 48;
+
+fn abbreviate_branch_name(branch_name: &str, max_chars: usize) -> String {
+    let branch_len = branch_name.chars().count();
+    if branch_len <= max_chars {
+        return branch_name.to_owned();
+    }
+
+    let parts: Vec<&str> = branch_name.split('/').collect();
+    if parts.len() > 1 {
+        if let (Some(root), Some(leaf)) = (parts.first(), parts.last()) {
+            let compact = format!("{root}/…/{leaf}");
+            if compact.chars().count() <= max_chars {
+                return compact;
+            }
+        }
+    }
+
+    abbreviate_middle(branch_name, max_chars)
+}
+
+fn abbreviate_middle(text: &str, max_chars: usize) -> String {
+    let text_len = text.chars().count();
+    if text_len <= max_chars {
+        return text.to_owned();
+    }
+
+    if max_chars <= 1 {
+        return "…".to_owned();
+    }
+
+    let visible_chars = max_chars - 1;
+    let prefix_len = visible_chars * 2 / 3;
+    let suffix_len = visible_chars - prefix_len;
+    let chars: Vec<char> = text.chars().collect();
+    let prefix: String = chars[..prefix_len].iter().collect();
+    let suffix: String = chars[chars.len() - suffix_len..].iter().collect();
+    format!("{prefix}…{suffix}")
+}
+
+fn set_label_tooltip(label: &Label, tooltip: Option<&str>) {
+    label.objc.with_mut(|obj| unsafe {
+        match tooltip {
+            Some(tooltip) => {
+                let tooltip = NSString::new(tooltip);
+                let _: () = msg_send![obj, setToolTip: tooltip];
+            }
+            None => {
+                let _: () = msg_send![obj, setToolTip: nil];
+            }
+        }
+    });
+}
 
 /// Publishes an action on the event bus (for the git service) and queues it to be applied on
 /// the main thread by the app delegate.
@@ -107,6 +163,8 @@ impl RockGitApp {
         self.header.layout();
 
         self.status.set_text_color(Color::SystemGray);
+        self.status.set_max_number_of_lines(1);
+        self.status.set_line_break_mode(LineBreakMode::TruncateTail);
 
         LayoutConstraint::activate(&[
             // Toolbar row.
@@ -172,8 +230,13 @@ impl RockGitApp {
 
         let repo = model.active_repository().map(|r| r.name.as_str()).unwrap_or("-");
         let branch = model.active_branch().map(|b| b.name.as_str()).unwrap_or("-");
+        let branch_label = abbreviate_branch_name(branch, STATUS_BRANCH_MAX_CHARS);
         self.status
-            .set_text(format!("{}  |  {}  |  {}", model.last_action, repo, branch));
+            .set_text(format!("{}  |  {}  |  {}", model.last_action, repo, branch_label));
+        set_label_tooltip(
+            &self.status,
+            (branch_label != branch && branch != "-").then_some(branch),
+        );
 
         self.repos.reload();
         if model.active_repo < model.repositories.len() {
@@ -195,6 +258,26 @@ impl RockGitApp {
         } else {
             self.commits.select_row_indexes(&[], false);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::abbreviate_branch_name;
+
+    #[test]
+    fn keeps_short_branch_names_unchanged() {
+        assert_eq!(abbreviate_branch_name("feature/login", 48), "feature/login");
+    }
+
+    #[test]
+    fn abbreviates_long_branch_names_in_the_middle() {
+        let branch = "origin/feature/docker/idp-release/goldenimage-python/python-idp-v3.13-2026_07_19-00cd882";
+        let abbreviated = abbreviate_branch_name(branch, 48);
+
+        assert!(abbreviated.chars().count() <= 48);
+        assert_eq!(abbreviated, "origin/…/python-idp-v3.13-2026_07_19-00cd882");
+        assert!(abbreviated.contains('…'));
     }
 }
 

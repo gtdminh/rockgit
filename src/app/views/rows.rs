@@ -1,5 +1,5 @@
 use cacao::color::Color;
-use cacao::foundation::id;
+use cacao::foundation::{id, nil, NSString};
 use cacao::image::{Image, ImageView};
 use cacao::layout::{Layout, LayoutConstraint};
 use cacao::objc::{msg_send, sel, sel_impl};
@@ -25,6 +25,22 @@ pub struct SidebarRow {
 }
 
 impl SidebarRow {
+    fn set_tooltip(&self, tooltip: Option<&str>) {
+        if let Some(view) = &self.view {
+            view.objc.with_mut(|obj| unsafe {
+                match tooltip {
+                    Some(tooltip) => {
+                        let tooltip = NSString::new(tooltip);
+                        let _: () = msg_send![obj, setToolTip: tooltip];
+                    }
+                    None => {
+                        let _: () = msg_send![obj, setToolTip: nil];
+                    }
+                }
+            });
+        }
+    }
+
     pub fn configure_header(&self, title: &str) {
         if let Some(view) = &self.view {
             view.set_background_color(Color::Clear);
@@ -33,6 +49,7 @@ impl SidebarRow {
         self.title.set_text(title);
         self.subtitle.set_hidden(true);
         self.subtitle.set_text("");
+        self.set_tooltip(None);
     }
 
     pub fn configure(&self, title: &str, subtitle: &str, current: bool) {
@@ -48,9 +65,10 @@ impl SidebarRow {
         self.title.set_text(title);
         self.subtitle.set_hidden(subtitle.is_empty());
         self.subtitle.set_text(subtitle);
+        self.set_tooltip(None);
     }
 
-    pub fn configure_tree_item(&self, title: &str, selected: bool, emphasized: bool) {
+    pub fn configure_tree_item(&self, title: &str, selected: bool, emphasized: bool, tooltip: Option<&str>) {
         if let Some(view) = &self.view {
             view.set_background_color(if selected {
                 Color::rgba(113, 76, 86, 180)
@@ -66,6 +84,7 @@ impl SidebarRow {
         self.title.set_text(title);
         self.subtitle.set_hidden(true);
         self.subtitle.set_text("");
+        self.set_tooltip(tooltip);
     }
 }
 
@@ -94,10 +113,16 @@ impl ViewDelegate for SidebarRow {
 }
 
 /// Everything a commit row needs to display.
+pub struct CommitPill {
+    pub text: String,
+    pub tooltip: Option<String>,
+    pub rgb: Rgb,
+}
+
 pub struct CommitRowData<'a> {
     pub graph: Image,
     pub graph_width: f64,
-    pub pills: &'a [(String, Rgb)],
+    pub pills: &'a [CommitPill],
     pub summary: &'a str,
     pub is_head: bool,
     pub date: &'a str,
@@ -121,6 +146,20 @@ pub struct CommitRow {
 }
 
 impl CommitRow {
+    fn set_pill_tooltip(pill: &Label, tooltip: Option<&str>) {
+        pill.objc.with_mut(|obj| unsafe {
+            match tooltip {
+                Some(tooltip) => {
+                    let tooltip = NSString::new(tooltip);
+                    let _: () = msg_send![obj, setToolTip: tooltip];
+                }
+                None => {
+                    let _: () = msg_send![obj, setToolTip: nil];
+                }
+            }
+        });
+    }
+
     pub fn configure(&self, data: &CommitRowData) {
         if let Some(view) = &self.view {
             view.set_background_color(if data.selected {
@@ -136,13 +175,14 @@ impl CommitRow {
 
         for (index, pill) in self.pills.iter().enumerate() {
             match data.pills.get(index) {
-                Some((text, rgb)) => {
+                Some(item) => {
                     if let Some(width) = self.pill_widths.get(index) {
-                        width.set_offset(text.chars().count() as f64 * 6.6 + 14.);
+                        width.set_offset(item.text.chars().count() as f64 * 6.6 + 14.);
                     }
-                    pill.set_text(text);
-                    pill.set_background_color(color(*rgb));
+                    pill.set_text(&item.text);
+                    pill.set_background_color(color(item.rgb));
                     pill.set_hidden(false);
+                    Self::set_pill_tooltip(pill, item.tooltip.as_deref());
                 },
                 None => {
                     if let Some(width) = self.pill_widths.get(index) {
@@ -151,6 +191,7 @@ impl CommitRow {
                     pill.set_text("");
                     pill.set_background_color(Color::Clear);
                     pill.set_hidden(true);
+                    Self::set_pill_tooltip(pill, None);
                 },
             }
         }
@@ -175,7 +216,7 @@ impl ViewDelegate for CommitRow {
             pill.set_font(&Font::bold_system(10.));
             pill.set_text_alignment(TextAlign::Center);
             pill.set_max_number_of_lines(1);
-            pill.set_line_break_mode(LineBreakMode::Clip);
+            pill.set_line_break_mode(LineBreakMode::TruncateTail);
             pill.set_text_color(Color::rgb(255, 255, 255));
             pill.objc.with_mut(|obj| unsafe {
                 let layer: id = msg_send![obj, layer];
