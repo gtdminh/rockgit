@@ -29,25 +29,26 @@ pub fn sample_repositories() -> Vec<Repository> {
     ]
 }
 
-fn branch(name: &str, ahead: u8, behind: u8, is_remote: bool) -> Branch {
+fn branch(name: &str, ahead: u8, behind: u8, is_remote: bool, is_current: bool) -> Branch {
     Branch {
         name: name.to_owned(),
         ahead,
         behind,
         is_remote,
+        is_current,
     }
 }
 
 pub fn sample_branches() -> Vec<Branch> {
     vec![
-        branch("main", 0, 0, false),
-        branch("feature/graph-ui", 3, 1, false),
-        branch("feature/search", 2, 0, false),
-        branch("hotfix/empty-repo", 1, 0, false),
-        branch("release/v0.2", 1, 0, false),
-        branch("origin/main", 0, 0, true),
-        branch("origin/feature/search", 0, 1, true),
-        branch("origin/release/v0.2", 0, 2, true),
+        branch("main", 0, 0, false, true),
+        branch("feature/graph-ui", 3, 1, false, false),
+        branch("feature/search", 2, 0, false, false),
+        branch("hotfix/empty-repo", 1, 0, false, false),
+        branch("release/v0.2", 1, 0, false, false),
+        branch("origin/main", 0, 0, true, false),
+        branch("origin/feature/search", 0, 1, true, false),
+        branch("origin/release/v0.2", 0, 2, true, false),
     ]
 }
 

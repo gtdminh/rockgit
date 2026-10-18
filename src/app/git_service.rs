@@ -3,28 +3,28 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::thread;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::app::{
     actions::{AppAction, GitOperation},
     bus,
     git::{self, ChangeKind, DecorationKind, GitClient, LogOptions},
-    model::{Branch, CommitNode, FileChange, LoadedRepo, RefBadge, RefKind},
+    model::{AppConfig, Branch, CommitNode, FileChange, LoadedRepo, RefBadge, RefKind},
     send_ui,
 };
 
 const MAX_COMMITS: usize = 1000;
 
 /// Starts the service on its own thread.
-pub fn start() {
+pub fn start(config: AppConfig) {
     let rx = bus::subscribe();
-    thread::spawn(move || GitService::default().run(rx));
+    thread::spawn(move || GitService::new(config).run(rx));
 }
 
-#[derive(Default)]
 struct GitService {
+    autorefresh_time: u64,
     /// Root of the repository currently shown, if it was loaded by this service.
     path: Option<PathBuf>,
     /// Commit ids in the same order as the model's commits.
@@ -32,15 +32,34 @@ struct GitService {
 }
 
 impl GitService {
+    fn new(config: AppConfig) -> Self {
+        Self {
+            autorefresh_time: config.autorefresh_time,
+            path: None,
+            ids: Vec::new(),
+        }
+    }
+
     fn run(mut self, rx: Receiver<AppAction>) {
-        while let Ok(action) = rx.recv() {
+        loop {
+            let action = match self.autorefresh_interval() {
+                Some(interval) => match rx.recv_timeout(interval) {
+                    Ok(action) => action,
+                    Err(RecvTimeoutError::Timeout) => {
+                        self.refresh_current_repo();
+                        continue;
+                    }
+                    Err(RecvTimeoutError::Disconnected) => break,
+                },
+                None => match rx.recv() {
+                    Ok(action) => action,
+                    Err(_) => break,
+                },
+            };
+
             match action {
                 AppAction::OpenRepository(path) => self.open(path),
-                AppAction::RunGitOperation(GitOperation::Refresh) => {
-                    if let Some(path) = self.path.clone() {
-                        self.open(path);
-                    }
-                }
+                AppAction::RunGitOperation(GitOperation::Refresh) => self.refresh_current_repo(),
                 // A sample (non-loaded) repository was selected.
                 AppAction::SelectRepository(_) => {
                     self.path = None;
@@ -49,6 +68,16 @@ impl GitService {
                 AppAction::SelectCommit(index) => self.load_commit_files(index),
                 _ => {}
             }
+        }
+    }
+
+    fn autorefresh_interval(&self) -> Option<Duration> {
+        (self.autorefresh_time > 0).then(|| Duration::from_secs(self.autorefresh_time))
+    }
+
+    fn refresh_current_repo(&mut self) {
+        if let Some(path) = self.path.clone() {
+            self.open(path);
         }
     }
 
@@ -144,6 +173,7 @@ fn load_repo(path: &Path) -> Result<(LoadedRepo, Vec<String>), String> {
             ahead: b.ahead.min(u8::MAX as u32) as u8,
             behind: b.behind.min(u8::MAX as u32) as u8,
             is_remote: b.is_remote,
+            is_current: b.is_current,
         })
         .collect();
 

@@ -6,7 +6,7 @@ use cacao::listview::{ListView, ListViewDelegate, ListViewRow};
 
 use crate::app::{
     actions::AppAction,
-    model::{AppModel, SharedModel, SidebarItem},
+    model::{SharedModel, SidebarItem},
     send,
     views::rows::SidebarRow,
 };
@@ -101,35 +101,90 @@ impl ListViewDelegate for BranchList {
 
     fn did_load(&mut self, view: ListView) {
         view.register(ROW_ID, SidebarRow::default);
-        view.set_row_height(40.);
+        view.set_row_height(28.);
         self.view = Some(view);
     }
 
     fn number_of_items(&self) -> usize {
-        self.model.lock().unwrap().branches.len()
+        self.model.lock().unwrap().sidebar_items().len()
     }
 
     fn item_for(&self, row: usize) -> ListViewRow {
         let view = self.view.as_ref().unwrap().dequeue::<SidebarRow>(ROW_ID);
         if let Some(cell) = &view.delegate {
             let model = self.model.lock().unwrap();
-            if let Some(branch) = model.branches.get(row) {
-                let prefix = if branch.is_remote { "☁" } else { "⑂" };
-                cell.configure(
-                    &format!("{prefix} {}", branch.name),
-                    &AppModel::branch_status(branch),
-                    model.active_branch == row,
-                );
+            if let Some(item) = model.sidebar_items().get(row) {
+                match item {
+                    SidebarItem::Section {
+                        title, expanded, ..
+                    } => {
+                        let arrow = if *expanded { "▾" } else { "▸" };
+                        cell.configure_header(&format!("{arrow} {title}"));
+                    }
+                    SidebarItem::Group {
+                        title,
+                        depth,
+                        expanded,
+                        ..
+                    } => {
+                        let arrow = if *expanded { "▾" } else { "▸" };
+                        let indent = "  ".repeat(*depth);
+                        cell.configure_tree_item(&format!("{indent}{arrow} {title}"), false, true);
+                    }
+                    SidebarItem::Branch {
+                        index,
+                        title,
+                        depth,
+                        head_copy,
+                    } => {
+                        let indent = "  ".repeat(*depth);
+                        let branch = &model.branches[*index];
+                        let icon = if *head_copy || branch.is_current {
+                            "✦"
+                        } else if branch.is_remote {
+                            "⎇"
+                        } else {
+                            "◦"
+                        };
+                        let selected = model.active_branch == *index && !*head_copy;
+                        cell.configure_tree_item(
+                            &format!("{indent}{icon} {title}"),
+                            selected,
+                            branch.is_current,
+                        );
+                    }
+                    SidebarItem::Tag { index, depth } => {
+                        let indent = "  ".repeat(*depth);
+                        if let Some(tag) = model.tags.get(*index) {
+                            cell.configure_tree_item(&format!("{indent}◇ {tag}"), false, false);
+                        }
+                    }
+                }
             }
         }
         view.into_row()
     }
 
     fn item_selected(&self, row: Option<usize>) {
-        if let Some(row) = row {
-            if self.model.lock().unwrap().active_branch != row {
-                send(AppAction::SelectBranch(row));
+        let Some(row) = row else {
+            return;
+        };
+
+        let item = {
+            let model = self.model.lock().unwrap();
+            model.sidebar_items().get(row).cloned()
+        };
+
+        match item {
+            Some(SidebarItem::Branch { index, .. }) => {
+                if self.model.lock().unwrap().active_branch != index {
+                    send(AppAction::SelectBranch(index));
+                }
             }
+            Some(SidebarItem::Section { id, .. }) | Some(SidebarItem::Group { id, .. }) => {
+                send(AppAction::ToggleBranchListNode(id));
+            }
+            Some(SidebarItem::Tag { .. }) | None => {}
         }
     }
 }

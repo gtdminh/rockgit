@@ -2,10 +2,11 @@ mod actions;
 mod bus;
 mod controller;
 mod git;
+mod git_service;
 mod model;
+pub(crate) mod persistent;
 mod sample_data;
 mod views;
-mod git_service;
 
 use std::sync::{Arc, Mutex};
 
@@ -45,8 +46,9 @@ pub fn send_ui(action: AppAction) {
 
 pub fn run() {
     let model: SharedModel = Arc::new(Mutex::new(AppModel::new()));
+    let config = model.lock().unwrap().config.clone();
 
-    git_service::start();
+    git_service::start(config);
     App::new("com.rockgit.app", RockGitApp::new(model)).run();
 }
 
@@ -174,16 +176,24 @@ impl RockGitApp {
             .set_text(format!("{}  |  {}  |  {}", model.last_action, repo, branch));
 
         self.repos.reload();
-        self.repos.select_row_indexes(&[model.active_repo], false);
+        if model.active_repo < model.repositories.len() {
+            self.repos.select_row_indexes(&[model.active_repo], false);
+        } else {
+            self.repos.select_row_indexes(&[], false);
+        }
         self.branches.reload();
         if let Some(row) = model.sidebar_row_of_branch(model.active_branch) {
             self.branches.select_row_indexes(&[row], false);
+        } else {
+            self.branches.select_row_indexes(&[], false);
         }
         self.header
             .set_graph_width(views::graph::GraphGeometry::for_model(&model).width);
         self.commits.reload();
         if let Some(row) = selected_row(&model) {
             self.commits.select_row_indexes(&[row], false);
+        } else {
+            self.commits.select_row_indexes(&[], false);
         }
     }
 }

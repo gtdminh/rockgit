@@ -6,6 +6,7 @@ use crate::app::model::{FileChange, LoadedRepo};
 pub enum AppAction {
     SelectRepository(usize),
     SelectBranch(usize),
+    ToggleBranchListNode(String),
     SelectCommit(usize),
     SelectOlderCommit,
     SelectNewerCommit,

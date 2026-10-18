@@ -1,6 +1,7 @@
 use crate::app::{
     actions::{AppAction, GitOperation},
     model::{AppModel, LoadedRepo, Repository},
+    persistent,
 };
 
 #[derive(Default)]
@@ -11,6 +12,7 @@ impl AppController {
         match action {
             AppAction::SelectRepository(index) => self.select_repository(model, index),
             AppAction::SelectBranch(index) => self.select_branch(model, index),
+            AppAction::ToggleBranchListNode(id) => self.toggle_branch_list_node(model, &id),
             AppAction::SelectCommit(index) => self.select_commit(model, index),
             AppAction::SelectOlderCommit => self.select_older_commit(model),
             AppAction::SelectNewerCommit => self.select_newer_commit(model),
@@ -52,16 +54,11 @@ impl AppController {
             branch_count: loaded.branches.len(),
             has_uncommitted_changes: false,
         };
-        match model.repositories.iter().position(|r| r.path == loaded.path) {
-            Some(index) => {
-                model.repositories[index] = repository;
-                model.active_repo = index;
-            }
-            None => {
-                model.repositories.push(repository);
-                model.active_repo = model.repositories.len() - 1;
-            }
+        if let Some(index) = model.repositories.iter().position(|repo| repo.path == loaded.path) {
+            model.repositories.remove(index);
         }
+        model.repositories.insert(0, repository);
+        model.active_repo = 0;
 
         model.branches = loaded.branches;
         model.tags = loaded.tags;
@@ -69,7 +66,13 @@ impl AppController {
         model.commits = loaded.commits;
         model.selected_commit = loaded.selected_commit;
         model.branch_filter = None;
-        model.last_action = format!("Loaded repository {}", loaded.name);
+        model.last_action = match persistent::save_recent_repositories(&model.repositories) {
+            Ok(()) => format!("Loaded repository {}", loaded.name),
+            Err(message) => format!(
+                "Loaded repository {} (failed to update recent list: {message})",
+                loaded.name
+            ),
+        };
     }
 
     fn select_repository(&mut self, model: &mut AppModel, index: usize) {
@@ -84,6 +87,15 @@ impl AppController {
             model.active_branch = index;
             model.last_action = format!("Checked branch focus on {}", branch.name);
         }
+    }
+
+    fn toggle_branch_list_node(&mut self, model: &mut AppModel, id: &str) {
+        let expanded = model.toggle_sidebar_node(id);
+        model.last_action = if expanded {
+            format!("Expanded {}", id.rsplit('/').next().unwrap_or(id))
+        } else {
+            format!("Collapsed {}", id.rsplit('/').next().unwrap_or(id))
+        };
     }
 
     fn select_commit(&mut self, model: &mut AppModel, index: usize) {
@@ -161,7 +173,7 @@ mod tests {
 
     #[test]
     fn select_repository_updates_model() {
-        let mut model = AppModel::new();
+        let mut model = AppModel::sample();
         let mut controller = AppController;
 
         controller.dispatch(&mut model, AppAction::SelectRepository(2));
@@ -172,7 +184,7 @@ mod tests {
 
     #[test]
     fn selecting_older_commit_stops_at_end() {
-        let mut model = AppModel::new();
+        let mut model = AppModel::sample();
         let mut controller = AppController;
         model.selected_commit = model.commits.len() - 1;
 
@@ -183,7 +195,7 @@ mod tests {
 
     #[test]
     fn run_operation_uses_active_context() {
-        let mut model = AppModel::new();
+        let mut model = AppModel::sample();
         let mut controller = AppController;
         model.active_repo = 0;
         model.active_branch = 1;

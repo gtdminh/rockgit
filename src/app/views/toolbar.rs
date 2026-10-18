@@ -79,11 +79,31 @@ impl Toolbar {
 
     /// Fills the branch popup once ("Show All" followed by every branch).
     pub fn fill_branches(&self, model: &AppModel) {
-        if self.branch_select.len() == 0 {
+        let mut hasher = DefaultHasher::new();
+        model.branches.len().hash(&mut hasher);
+        for branch in &model.branches {
+            branch.name.hash(&mut hasher);
+            branch.ahead.hash(&mut hasher);
+            branch.behind.hash(&mut hasher);
+            branch.is_remote.hash(&mut hasher);
+            branch.is_current.hash(&mut hasher);
+        }
+        let signature = hasher.finish();
+
+        if self.branch_signature.get() != Some(signature) {
+            self.branch_select.remove_all_items();
             self.branch_select.add_item("Show All");
             for branch in &model.branches {
                 self.branch_select.add_item(&branch.name);
             }
+            self.branch_signature.set(Some(signature));
+        }
+
+        let selected = model.branch_filter.map(|index| index + 1).unwrap_or(0);
+        if selected < self.branch_select.len() {
+            self.branch_select.set_selected_index(selected as _);
+        } else if self.branch_select.len() > 0 {
+            self.branch_select.set_selected_index(0);
         }
     }
 

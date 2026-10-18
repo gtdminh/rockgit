@@ -31,6 +31,7 @@ impl SidebarRow {
         }
         self.title.set_font(&Font::bold_system(10.));
         self.title.set_text(title);
+        self.subtitle.set_hidden(true);
         self.subtitle.set_text("");
     }
 
@@ -45,7 +46,26 @@ impl SidebarRow {
         self.title
             .set_font(&if current { Font::bold_system(13.) } else { Font::system(13.) });
         self.title.set_text(title);
+        self.subtitle.set_hidden(subtitle.is_empty());
         self.subtitle.set_text(subtitle);
+    }
+
+    pub fn configure_tree_item(&self, title: &str, selected: bool, emphasized: bool) {
+        if let Some(view) = &self.view {
+            view.set_background_color(if selected {
+                Color::rgba(113, 76, 86, 180)
+            } else {
+                Color::Clear
+            });
+        }
+        self.title.set_font(&if selected || emphasized {
+            Font::bold_system(12.)
+        } else {
+            Font::system(12.)
+        });
+        self.title.set_text(title);
+        self.subtitle.set_hidden(true);
+        self.subtitle.set_text("");
     }
 }
 
