@@ -12,7 +12,7 @@ use crate::app::{
     bus,
     git::{
         self, ChangeKind, CleanOptions, CommitOptions, DecorationKind, GitClient, LogOptions,
-        PushOptions, StatusOptions,
+        FetchOptions, PullOptions, PushOptions, StatusOptions,
     },
     model::{
         AppConfig, Branch, CommitNode, FileChange, LoadedRepo, RefBadge, RefKind,
@@ -67,6 +67,7 @@ impl GitService {
                 AppAction::UpdateConfig(config) => self.update_config(config),
                 AppAction::OpenRepository(path) => self.open(path),
                 AppAction::RunGitOperation(GitOperation::Refresh) => self.refresh_current_repo(),
+                AppAction::RunGitOperation(operation) => self.run_git_operation(operation),
                 AppAction::RevertWorkingTreeFile(path) => self.revert_working_tree_file(&path),
                 AppAction::RevertAllWorkingTreeChanges => self.revert_all_working_tree_changes(),
                 AppAction::CommitWorkingTree {
@@ -122,6 +123,35 @@ impl GitService {
                 files,
             });
         }
+    }
+
+    fn run_git_operation(&mut self, operation: GitOperation) {
+        let Some(repo_path) = self.path.clone() else {
+            return;
+        };
+
+        let result = (|| -> Result<String, String> {
+            let client = GitClient::open(&repo_path).map_err(|e| e.to_string())?;
+            match operation {
+                GitOperation::Fetch => {
+                    let output = client.fetch(&FetchOptions::default()).map_err(|e| e.to_string())?;
+                    Ok(operation_output_message(operation, output))
+                }
+                GitOperation::Pull => match client.pull(&PullOptions::default()).map_err(|e| e.to_string())? {
+                    git::OpOutcome::Success(output) => Ok(operation_output_message(operation, output)),
+                    git::OpOutcome::Conflict { output, .. } => {
+                        Ok(operation_output_message(operation, output))
+                    }
+                },
+                GitOperation::Push => {
+                    let output = client.push(&PushOptions::default()).map_err(|e| e.to_string())?;
+                    Ok(operation_output_message(operation, output))
+                }
+                GitOperation::Refresh => unreachable!("refresh is handled before this point"),
+            }
+        })();
+
+        self.finish_git_operation(repo_path, result);
     }
 
     fn revert_working_tree_file(&mut self, path: &str) {
@@ -213,6 +243,13 @@ impl GitService {
         repo_path: PathBuf,
         result: Result<String, String>,
     ) {
+        self.open(repo_path);
+        match result {
+            Ok(message) | Err(message) => send_ui(AppAction::SetLastAction(message)),
+        }
+    }
+
+    fn finish_git_operation(&mut self, repo_path: PathBuf, result: Result<String, String>) {
         self.open(repo_path);
         match result {
             Ok(message) | Err(message) => send_ui(AppAction::SetLastAction(message)),
@@ -478,6 +515,17 @@ fn relative_time(unix_seconds: i64) -> String {
         2_592_000..=31_535_999 => format!("{}mo ago", delta / 2_592_000),
         _ => format!("{}y ago", delta / 31_536_000),
     }
+}
+
+fn operation_output_message(operation: GitOperation, output: String) -> String {
+    let output = output.trim();
+    let kind = operation.label().to_lowercase();
+
+    if output.is_empty() {
+        return format!("{kind} completed");
+    }
+
+    format!("{kind} completed: {output}")
 }
 
 #[cfg(test)]

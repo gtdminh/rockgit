@@ -52,3 +52,10 @@ fn working_tree_changes_ignores_ignored_entries_and_formats_renames() {
     assert!(changes.files[0].staged);
     assert!(changes.files[1].untracked);
 }
+
+#[test]
+fn operation_output_message_trims_and_names_the_operation() {
+    assert_eq!(operation_output_message(GitOperation::Fetch, "  ".to_owned()), "fetch completed");
+    assert_eq!(operation_output_message(GitOperation::Push, "done".to_owned()), "push completed: done");
+}
+
