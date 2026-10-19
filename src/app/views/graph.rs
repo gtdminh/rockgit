@@ -8,8 +8,11 @@ use crate::app::{
     model::{AppModel, CommitNode, RefBadge, RefKind, SharedModel},
     send,
     views::{
-        rows::{CommitPill, CommitRow, CommitRowData, MAX_GRAPH_WIDTH, MAX_PILLS, MIN_GRAPH_WIDTH, ROW_HEIGHT},
-        theme::{lane_rgb, ref_rgb, Rgb},
+        rows::{
+            CommitPill, CommitRow, CommitRowData, MAX_GRAPH_WIDTH, MAX_PILLS, MIN_GRAPH_WIDTH,
+            ROW_HEIGHT,
+        },
+        theme::{Rgb, lane_rgb, ref_rgb},
     },
 };
 
@@ -22,8 +25,20 @@ const MAX_PILL_CHARS: usize = 24;
 
 /// A drawing primitive in row-local coordinates (origin top-left).
 enum Prim {
-    Line { from: (f64, f64), to: (f64, f64), rgb: Rgb, is_mainline: bool },
-    Curve { from: (f64, f64), c1: (f64, f64), c2: (f64, f64), to: (f64, f64), rgb: Rgb, is_mainline: bool },
+    Line {
+        from: (f64, f64),
+        to: (f64, f64),
+        rgb: Rgb,
+        is_mainline: bool,
+    },
+    Curve {
+        from: (f64, f64),
+        c1: (f64, f64),
+        c2: (f64, f64),
+        to: (f64, f64),
+        rgb: Rgb,
+        is_mainline: bool,
+    },
 }
 
 const DEFAULT_LINE_WIDTH: f64 = 2.;
@@ -64,7 +79,13 @@ impl GraphGeometry {
 
 /// Computes the lines crossing one row of the graph. `rows` are the visible commits,
 /// newest first, and `row` is the position being drawn.
-fn row_primitives(geo: GraphGeometry, rows: &[&CommitNode], positions: &[Option<usize>], all: &[CommitNode], row: usize) -> Vec<Prim> {
+fn row_primitives(
+    geo: GraphGeometry,
+    rows: &[&CommitNode],
+    positions: &[Option<usize>],
+    all: &[CommitNode],
+    row: usize,
+) -> Vec<Prim> {
     let (top, mid, bottom) = (0., ROW_HEIGHT / 2., ROW_HEIGHT);
     let mut prims = Vec::new();
 
@@ -77,11 +98,17 @@ fn row_primitives(geo: GraphGeometry, rows: &[&CommitNode], positions: &[Option<
             // Branch edges run down the child's lane, merge edges down the parent's lane.
             let edge_lane = child.lane.max(parent.lane);
             let rgb = lane_rgb(edge_lane);
-            let is_mainline = child.is_mainline && parent.is_mainline && child.lane == 0 && parent.lane == 0;
+            let is_mainline =
+                child.is_mainline && parent.is_mainline && child.lane == 0 && parent.lane == 0;
             let (xc, xp, xe) = (geo.x(child.lane), geo.x(parent.lane), geo.x(edge_lane));
 
             if child_pos < row && row < parent_pos {
-                prims.push(Prim::Line { from: (xe, top), to: (xe, bottom), rgb, is_mainline });
+                prims.push(Prim::Line {
+                    from: (xe, top),
+                    to: (xe, bottom),
+                    rgb,
+                    is_mainline,
+                });
             } else if row == child_pos {
                 if parent.lane > child.lane {
                     // Merge: leave the child lane and curve into the parent lane.
@@ -94,7 +121,12 @@ fn row_primitives(geo: GraphGeometry, rows: &[&CommitNode], positions: &[Option<
                         is_mainline,
                     });
                 } else {
-                    prims.push(Prim::Line { from: (xc, mid), to: (xc, bottom), rgb, is_mainline });
+                    prims.push(Prim::Line {
+                        from: (xc, mid),
+                        to: (xc, bottom),
+                        rgb,
+                        is_mainline,
+                    });
                 }
             } else if row == parent_pos {
                 if child.lane > parent.lane {
@@ -108,7 +140,12 @@ fn row_primitives(geo: GraphGeometry, rows: &[&CommitNode], positions: &[Option<
                         is_mainline,
                     });
                 } else {
-                    prims.push(Prim::Line { from: (xp, top), to: (xp, mid), rgb, is_mainline });
+                    prims.push(Prim::Line {
+                        from: (xp, top),
+                        to: (xp, mid),
+                        rgb,
+                        is_mainline,
+                    });
                 }
             }
         }
@@ -117,13 +154,23 @@ fn row_primitives(geo: GraphGeometry, rows: &[&CommitNode], positions: &[Option<
     prims
 }
 
-fn graph_image(geo: GraphGeometry, prims: Vec<Prim>, node_lane: usize, is_head: bool, is_mainline: bool) -> Image {
+fn graph_image(
+    geo: GraphGeometry,
+    prims: Vec<Prim>,
+    node_lane: usize,
+    is_head: bool,
+    is_mainline: bool,
+) -> Image {
     let node_x = geo.x(node_lane);
     let node_rgb = lane_rgb(node_lane);
     let size = (geo.width, ROW_HEIGHT);
 
     Image::draw(
-        DrawConfig { source: size, target: size, resize: ResizeBehavior::Stretch },
+        DrawConfig {
+            source: size,
+            target: size,
+            resize: ResizeBehavior::Stretch,
+        },
         move |_rect, ctx| {
             let channel = |v: u8| f64::from(v) / 255.;
 
@@ -140,12 +187,17 @@ fn graph_image(geo: GraphGeometry, prims: Vec<Prim>, node_lane: usize, is_head: 
                         } else {
                             DEFAULT_LINE_WIDTH
                         });
-                        ctx.set_rgb_stroke_color(channel(rgb.0), channel(rgb.1), channel(rgb.2), 1.);
+                        ctx.set_rgb_stroke_color(
+                            channel(rgb.0),
+                            channel(rgb.1),
+                            channel(rgb.2),
+                            1.,
+                        );
                         ctx.begin_path();
                         ctx.move_to_point(from.0, from.1);
                         ctx.add_line_to_point(to.0, to.1);
                         ctx.stroke_path();
-                    },
+                    }
                     Prim::Curve {
                         from,
                         c1,
@@ -159,19 +211,31 @@ fn graph_image(geo: GraphGeometry, prims: Vec<Prim>, node_lane: usize, is_head: 
                         } else {
                             DEFAULT_LINE_WIDTH
                         });
-                        ctx.set_rgb_stroke_color(channel(rgb.0), channel(rgb.1), channel(rgb.2), 1.);
+                        ctx.set_rgb_stroke_color(
+                            channel(rgb.0),
+                            channel(rgb.1),
+                            channel(rgb.2),
+                            1.,
+                        );
                         ctx.begin_path();
                         ctx.move_to_point(from.0, from.1);
                         ctx.add_curve_to_point(c1.0, c1.1, c2.0, c2.1, to.0, to.1);
                         ctx.stroke_path();
-                    },
+                    }
                 }
             }
 
             let mid = ROW_HEIGHT / 2.;
-            let node_radius = if is_mainline { MAINLINE_NODE_RADIUS } else { NODE_RADIUS };
+            let node_radius = if is_mainline {
+                MAINLINE_NODE_RADIUS
+            } else {
+                NODE_RADIUS
+            };
             let rect = |r: f64| {
-                CGRect::new(&CGPoint::new(node_x - r, mid - r), &CGSize::new(r * 2., r * 2.))
+                CGRect::new(
+                    &CGPoint::new(node_x - r, mid - r),
+                    &CGSize::new(r * 2., r * 2.),
+                )
             };
             if is_head {
                 // HEAD: hollow node with a thick ring.
@@ -182,14 +246,39 @@ fn graph_image(geo: GraphGeometry, prims: Vec<Prim>, node_lane: usize, is_head: 
                 } else {
                     MAINLINE_LINE_WIDTH
                 });
-                ctx.set_rgb_stroke_color(channel(node_rgb.0), channel(node_rgb.1), channel(node_rgb.2), 1.);
+                ctx.set_rgb_stroke_color(
+                    channel(node_rgb.0),
+                    channel(node_rgb.1),
+                    channel(node_rgb.2),
+                    1.,
+                );
                 ctx.stroke_ellipse_in_rect(rect(node_radius));
             } else {
-                ctx.set_rgb_fill_color(channel(node_rgb.0), channel(node_rgb.1), channel(node_rgb.2), 1.);
+                ctx.set_rgb_fill_color(
+                    channel(node_rgb.0),
+                    channel(node_rgb.1),
+                    channel(node_rgb.2),
+                    1.,
+                );
                 ctx.fill_ellipse_in_rect(rect(node_radius));
             }
             true
         },
+    )
+}
+
+fn working_tree_graph_image(geo: GraphGeometry) -> Image {
+    graph_image(
+        geo,
+        vec![Prim::Line {
+            from: (geo.x(0), ROW_HEIGHT / 2.),
+            to: (geo.x(0), ROW_HEIGHT),
+            rgb: lane_rgb(0),
+            is_mainline: true,
+        }],
+        0,
+        false,
+        true,
     )
 }
 
@@ -211,6 +300,37 @@ fn commit_pill(badge: &RefBadge) -> CommitPill {
         text,
         rgb: ref_rgb(badge.kind),
     }
+}
+
+fn working_tree_pills(model: &AppModel) -> Vec<CommitPill> {
+    let mut pills = Vec::new();
+    let changed_count = model.working_tree.changed_files().len();
+    let unversioned_count = model.working_tree.unversioned_files().len();
+
+    if changed_count > 0 {
+        pills.push(CommitPill {
+            text: format!("changed {}", changed_count),
+            tooltip: None,
+            rgb: (46, 204, 113),
+        });
+    }
+    if unversioned_count > 0 {
+        pills.push(CommitPill {
+            text: format!("unversions {}", unversioned_count),
+            tooltip: None,
+            rgb: (241, 196, 15),
+        });
+    }
+    if model.working_tree.untracked_count > 0 {
+        pills.push(CommitPill {
+            text: format!("untracked {}", model.working_tree.untracked_count),
+            tooltip: None,
+            rgb: (149, 165, 166),
+        });
+    }
+
+    pills.truncate(MAX_PILLS);
+    pills
 }
 
 fn abbreviate_ref_label(label: &str, max_chars: usize) -> String {
@@ -266,63 +386,7 @@ pub struct CommitList {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{abbreviate_ref_label, pills_for};
-    use crate::app::model::{CommitNode, RefBadge, RefKind};
-
-    fn commit_with_refs(refs: Vec<RefBadge>) -> CommitNode {
-        CommitNode {
-            id: String::new(),
-            short_id: "abc1234".to_owned(),
-            summary: "summary".to_owned(),
-            author: "author".to_owned(),
-            relative_time: "now".to_owned(),
-            lane: 0,
-            parents: Vec::new(),
-            refs,
-            files: Vec::new(),
-            is_head: false,
-            is_mainline: false,
-        }
-    }
-
-    #[test]
-    fn abbreviates_graph_ref_labels_using_path_context_when_possible() {
-        let label = "origin/feature/docker/idp-release/goldenimage-python/python-idp-v3.13-2026_07_19-00cd882";
-        let abbreviated = abbreviate_ref_label(label, 24);
-
-        assert!(abbreviated.starts_with("…/python-idp"));
-        assert!(abbreviated.ends_with("00cd882"));
-        assert!(abbreviated.contains('…'));
-        assert!(abbreviated.chars().count() <= 24);
-    }
-
-    #[test]
-    fn graph_pills_include_full_name_tooltip_only_when_abbreviated() {
-        let commit = commit_with_refs(vec![
-            RefBadge {
-                label: "main".to_owned(),
-                kind: RefKind::LocalBranch,
-            },
-            RefBadge {
-                label: "origin/feature/docker/idp-release/goldenimage-python/python-idp-v3.13-2026_07_19-00cd882"
-                    .to_owned(),
-                kind: RefKind::RemoteBranch,
-            },
-        ]);
-
-        let pills = pills_for(&commit, true);
-
-        assert_eq!(pills[0].text, "main");
-        assert_eq!(pills[0].tooltip, None);
-        assert_eq!(
-            pills[1].tooltip.as_deref(),
-            Some("origin/feature/docker/idp-release/goldenimage-python/python-idp-v3.13-2026_07_19-00cd882")
-        );
-        assert!(pills[1].text.contains('…'));
-        assert!(pills[1].text.chars().count() <= 24);
-    }
-}
+mod tests;
 
 impl CommitList {
     pub fn new(model: SharedModel) -> Self {
@@ -344,7 +408,7 @@ impl ListViewDelegate for CommitList {
     }
 
     fn number_of_items(&self) -> usize {
-        self.model.lock().unwrap().visible_commits().len()
+        self.model.lock().unwrap().commit_list_len()
     }
 
     fn item_for(&self, row: usize) -> ListViewRow {
@@ -352,8 +416,38 @@ impl ListViewDelegate for CommitList {
         if let Some(cell) = &view.delegate {
             let model = self.model.lock().unwrap();
             let visible = model.visible_commits();
+            let geo = GraphGeometry::for_max_lane(
+                visible
+                    .iter()
+                    .map(|&i| model.commits[i].lane)
+                    .max()
+                    .unwrap_or(0),
+            );
 
-            if let Some(&index) = visible.get(row) {
+            if model.has_uncommitted_changes() && row == 0 {
+                let pills = working_tree_pills(&model);
+                let file_count = model.working_tree.total_count();
+                let date_text = if file_count == 1 {
+                    "1 file".to_owned()
+                } else {
+                    format!("{file_count} files")
+                };
+
+                cell.configure(&CommitRowData {
+                    graph: working_tree_graph_image(geo),
+                    graph_width: geo.width,
+                    pills: &pills,
+                    summary: "Uncommitted changes",
+                    is_head: false,
+                    date: &date_text,
+                    author: "Working tree",
+                    short_id: "",
+                    selected: model.selected_uncommitted,
+                });
+                return view.into_row();
+            }
+
+            if let Some(index) = model.commit_index_for_row(row) {
                 let rows: Vec<&CommitNode> = visible.iter().map(|&i| &model.commits[i]).collect();
                 let mut positions = vec![None; model.commits.len()];
                 for (pos, &i) in visible.iter().enumerate() {
@@ -361,9 +455,13 @@ impl ListViewDelegate for CommitList {
                 }
 
                 let commit = &model.commits[index];
-                let geo = GraphGeometry::for_max_lane(rows.iter().map(|c| c.lane).max().unwrap_or(0));
-                let prims = row_primitives(geo, &rows, &positions, &model.commits, row);
-                let marker = if model.commit_matches_query(commit) { "▸ " } else { "" };
+                let graph_row = row - usize::from(model.has_uncommitted_changes());
+                let prims = row_primitives(geo, &rows, &positions, &model.commits, graph_row);
+                let marker = if model.commit_matches_query(commit) {
+                    "▸ "
+                } else {
+                    ""
+                };
                 let summary = format!("{marker}{}", commit.summary);
 
                 cell.configure(&CommitRowData {
@@ -375,7 +473,7 @@ impl ListViewDelegate for CommitList {
                     date: &commit.relative_time,
                     author: &commit.author,
                     short_id: &commit.short_id,
-                    selected: model.selected_commit == index,
+                    selected: !model.selected_uncommitted && model.selected_commit == index,
                 });
             }
         }
@@ -385,7 +483,13 @@ impl ListViewDelegate for CommitList {
     fn item_selected(&self, row: Option<usize>) {
         let Some(row) = row else { return };
         let model = self.model.lock().unwrap();
-        if let Some(&index) = model.visible_commits().get(row) {
+        if model.has_uncommitted_changes() && row == 0 {
+            if !model.selected_uncommitted {
+                send(AppAction::SelectUncommittedChanges);
+            }
+            return;
+        }
+        if let Some(index) = model.commit_index_for_row(row) {
             if model.selected_commit != index {
                 send(AppAction::SelectCommit(index));
             }
@@ -395,9 +499,5 @@ impl ListViewDelegate for CommitList {
 
 /// Position of the selected commit within the visible list, if it is visible.
 pub fn selected_row(model: &AppModel) -> Option<usize> {
-    model
-        .visible_commits()
-        .iter()
-        .position(|&i| i == model.selected_commit)
+    model.selected_commit_row()
 }
-

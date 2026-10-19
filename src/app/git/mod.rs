@@ -41,9 +41,7 @@ mod tests;
 
 pub use client::{CloneOptions, GitClient, InitOptions};
 pub use commit::CommitOptions;
-pub use diff::{
-    ApplyOptions, DiffLine, DiffLineKind, DiffOptions, DiffTarget, FileDiff, Hunk,
-};
+pub use diff::{ApplyOptions, DiffLine, DiffLineKind, DiffOptions, DiffTarget, FileDiff, Hunk};
 pub use error::{GitError, GitResult};
 pub use graph::{GraphEdge, GraphRow, build_graph};
 pub use history::{LogOptions, LogOrder};

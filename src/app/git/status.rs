@@ -78,12 +78,17 @@ impl GitClient {
 
     /// All tracked files, relative to the repository root.
     pub fn tracked_files(&self) -> GitResult<Vec<String>> {
-        Ok(split_nul(&self.run(Args::new("ls-files").arg("-z"))?.stdout_str()))
+        Ok(split_nul(
+            &self.run(Args::new("ls-files").arg("-z"))?.stdout_str(),
+        ))
     }
 }
 
 pub(super) fn split_nul(s: &str) -> Vec<String> {
-    s.split('\0').filter(|p| !p.is_empty()).map(str::to_string).collect()
+    s.split('\0')
+        .filter(|p| !p.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 fn change(c: Option<char>) -> ChangeKind {
@@ -95,7 +100,9 @@ pub(super) fn parse_status(raw: &str) -> RepoStatus {
     let mut st = RepoStatus::default();
     let mut it = raw.split('\0');
     while let Some(tok) = it.next() {
-        let Some(kind) = tok.bytes().next() else { continue };
+        let Some(kind) = tok.bytes().next() else {
+            continue;
+        };
         if let Some(header) = tok.strip_prefix("# ") {
             let (key, value) = header.split_once(' ').unwrap_or((header, ""));
             match key {
@@ -110,8 +117,8 @@ pub(super) fn parse_status(raw: &str) -> RepoStatus {
                             st.behind = n.parse().unwrap_or(0);
                         }
                     }
-                },
-                _ => {},
+                }
+                _ => {}
             }
             continue;
         }
@@ -135,11 +142,19 @@ pub(super) fn parse_status(raw: &str) -> RepoStatus {
                     path: f[fields - 1].to_string(),
                     orig_path,
                     kind: entry_kind,
-                    index: if unmerged { ChangeKind::Unmerged } else { change(x) },
-                    worktree: if unmerged { ChangeKind::Unmerged } else { change(y) },
+                    index: if unmerged {
+                        ChangeKind::Unmerged
+                    } else {
+                        change(x)
+                    },
+                    worktree: if unmerged {
+                        ChangeKind::Unmerged
+                    } else {
+                        change(y)
+                    },
                     code: code.to_string(),
                 });
-            },
+            }
             b'?' | b'!' => {
                 let (entry_kind, change_kind, code) = if kind == b'?' {
                     (EntryKind::Untracked, ChangeKind::Untracked, "??")
@@ -154,8 +169,8 @@ pub(super) fn parse_status(raw: &str) -> RepoStatus {
                     worktree: change_kind,
                     code: code.to_string(),
                 });
-            },
-            _ => {},
+            }
+            _ => {}
         }
     }
     st

@@ -58,13 +58,24 @@ impl GitClient {
         let root = if bare {
             git_dir.clone()
         } else {
-            let top = execute(&opts, Some(path), &Args::new("rev-parse").arg("--show-toplevel"), None, &[])?;
+            let top = execute(
+                &opts,
+                Some(path),
+                &Args::new("rev-parse").arg("--show-toplevel"),
+                None,
+                &[],
+            )?;
             if !top.success() {
                 return Err(GitError::NotARepository(path.to_path_buf()));
             }
             PathBuf::from(top.stdout_str().trim_end())
         };
-        Ok(Self { root, git_dir, bare, opts })
+        Ok(Self {
+            root,
+            git_dir,
+            bare,
+            opts,
+        })
     }
 
     /// Creates a repository at `path` (creating the directory if needed) and opens it.
@@ -158,7 +169,13 @@ impl GitClient {
     }
 
     pub(super) fn run_stdin(&self, args: Args, input: &[u8]) -> GitResult<Output> {
-        let out = execute(&self.opts, Some(&self.root), &args, Some(input.to_vec()), &[])?;
+        let out = execute(
+            &self.opts,
+            Some(&self.root),
+            &args,
+            Some(input.to_vec()),
+            &[],
+        )?;
         check(&args, out)
     }
 
@@ -182,7 +199,10 @@ impl GitClient {
         if files.is_empty() {
             return Err(command_error(&args, &out));
         }
-        Ok(OpOutcome::Conflict { files, output: combined })
+        Ok(OpOutcome::Conflict {
+            files,
+            output: combined,
+        })
     }
 
     pub fn has_commits(&self) -> GitResult<bool> {
@@ -192,7 +212,11 @@ impl GitClient {
 }
 
 pub(super) fn check(args: &Args, out: Output) -> GitResult<Output> {
-    if out.success() { Ok(out) } else { Err(command_error(args, &out)) }
+    if out.success() {
+        Ok(out)
+    } else {
+        Err(command_error(args, &out))
+    }
 }
 
 pub(super) fn command_error(args: &Args, out: &Output) -> GitError {
@@ -200,7 +224,11 @@ pub(super) fn command_error(args: &Args, out: &Output) -> GitError {
     if stderr.is_empty() {
         stderr = super::error::redact(out.stdout_str().trim_end());
     }
-    GitError::Command { command: args.describe(), code: out.status, stderr }
+    GitError::Command {
+        command: args.describe(),
+        code: out.status,
+        stderr,
+    }
 }
 
 pub(super) fn join_output(out: &Output) -> String {
@@ -216,7 +244,9 @@ pub(super) fn join_output(out: &Output) -> String {
 /// Rejects values that git would parse as options (`--upload-pack=...`) or that can't be refs.
 pub(super) fn safe_ref(s: &str) -> GitResult<&str> {
     if s.is_empty() || s.starts_with('-') || s.contains(['\0', '\n']) {
-        return Err(GitError::InvalidInput(format!("invalid ref or name: {s:?}")));
+        return Err(GitError::InvalidInput(format!(
+            "invalid ref or name: {s:?}"
+        )));
     }
     Ok(s)
 }

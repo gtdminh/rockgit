@@ -10,8 +10,14 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::app::{
     actions::{AppAction, GitOperation},
     bus,
-    git::{self, ChangeKind, DecorationKind, GitClient, LogOptions},
-    model::{AppConfig, Branch, CommitNode, FileChange, LoadedRepo, RefBadge, RefKind},
+    git::{
+        self, ChangeKind, CleanOptions, CommitOptions, DecorationKind, GitClient, LogOptions,
+        PushOptions, StatusOptions,
+    },
+    model::{
+        AppConfig, Branch, CommitNode, FileChange, LoadedRepo, RefBadge, RefKind,
+        WorkingTreeChanges, WorkingTreeFile,
+    },
     send_ui,
 };
 
@@ -58,8 +64,15 @@ impl GitService {
             };
 
             match action {
+                AppAction::UpdateConfig(config) => self.update_config(config),
                 AppAction::OpenRepository(path) => self.open(path),
                 AppAction::RunGitOperation(GitOperation::Refresh) => self.refresh_current_repo(),
+                AppAction::RevertWorkingTreeFile(path) => self.revert_working_tree_file(&path),
+                AppAction::RevertAllWorkingTreeChanges => self.revert_all_working_tree_changes(),
+                AppAction::CommitWorkingTree {
+                    message,
+                    push_after,
+                } => self.commit_working_tree(&message, push_after),
                 // A sample (non-loaded) repository was selected.
                 AppAction::SelectRepository(_) => {
                     self.path = None;
@@ -79,6 +92,11 @@ impl GitService {
         if let Some(path) = self.path.clone() {
             self.open(path);
         }
+    }
+
+    fn update_config(&mut self, config: AppConfig) {
+        self.autorefresh_time = config.autorefresh_time;
+        self.refresh_current_repo();
     }
 
     /// Loads branches and the graph, then selects the latest commit of the current branch.
@@ -105,12 +123,110 @@ impl GitService {
             });
         }
     }
+
+    fn revert_working_tree_file(&mut self, path: &str) {
+        let Some(repo_path) = self.path.clone() else {
+            return;
+        };
+
+        let result = (|| -> Result<String, String> {
+            let client = GitClient::open(&repo_path).map_err(|e| e.to_string())?;
+            let status = client
+                .status(&StatusOptions::default())
+                .map_err(|e| e.to_string())?;
+            let entry = status
+                .entries
+                .iter()
+                .find(|entry| entry.path == path)
+                .cloned()
+                .ok_or_else(|| format!("No working tree change found for {path}"))?;
+
+            revert_entry(&client, &entry)?;
+            Ok(format!("Reverted {path}"))
+        })();
+
+        self.finish_working_tree_operation(repo_path, result);
+    }
+
+    fn revert_all_working_tree_changes(&mut self) {
+        let Some(repo_path) = self.path.clone() else {
+            return;
+        };
+
+        let result = (|| -> Result<String, String> {
+            let client = GitClient::open(&repo_path).map_err(|e| e.to_string())?;
+            let status = client
+                .status(&StatusOptions::default())
+                .map_err(|e| e.to_string())?;
+
+            revert_all_entries(&client, &status)?;
+            Ok("Reverted all working tree changes".to_owned())
+        })();
+
+        self.finish_working_tree_operation(repo_path, result);
+    }
+
+    fn commit_working_tree(&mut self, message: &str, push_after: bool) {
+        let Some(repo_path) = self.path.clone() else {
+            return;
+        };
+
+        let result = (|| -> Result<String, String> {
+            let trimmed = message.trim();
+            if trimmed.is_empty() {
+                return Err("Commit message is required".to_owned());
+            }
+
+            let client = GitClient::open(&repo_path).map_err(|e| e.to_string())?;
+            client.stage_all().map_err(|e| e.to_string())?;
+            let commit_id = client
+                .commit(&CommitOptions {
+                    message: trimmed.to_owned(),
+                    ..Default::default()
+                })
+                .map_err(|e| e.to_string())?;
+
+            if push_after {
+                client.push(&PushOptions::default()).map_err(|e| {
+                    format!(
+                        "Committed {} but push failed: {e}",
+                        &commit_id[..commit_id.len().min(7)]
+                    )
+                })?;
+            }
+
+            Ok(if push_after {
+                format!(
+                    "Committed {} and pushed changes",
+                    &commit_id[..commit_id.len().min(7)]
+                )
+            } else {
+                format!("Committed {}", &commit_id[..commit_id.len().min(7)])
+            })
+        })();
+
+        self.finish_working_tree_operation(repo_path, result);
+    }
+
+    fn finish_working_tree_operation(
+        &mut self,
+        repo_path: PathBuf,
+        result: Result<String, String>,
+    ) {
+        self.open(repo_path);
+        match result {
+            Ok(message) | Err(message) => send_ui(AppAction::SetLastAction(message)),
+        }
+    }
 }
 
 fn load_repo(path: &Path) -> Result<(LoadedRepo, Vec<String>), String> {
     let client = GitClient::open(path).map_err(|e| format!("Not a git repository: {e}"))?;
 
     let git_branches = client.branches().map_err(|e| e.to_string())?;
+    let status = client
+        .status(&StatusOptions::default())
+        .map_err(|e| e.to_string())?;
     let rows = client
         .graph(&LogOptions {
             all: true,
@@ -121,7 +237,11 @@ fn load_repo(path: &Path) -> Result<(LoadedRepo, Vec<String>), String> {
     let head = client.head().map_err(|e| e.to_string())?;
 
     let ids: Vec<String> = rows.iter().map(|row| row.commit.id.clone()).collect();
-    let index_of: HashMap<&str, usize> = ids.iter().enumerate().map(|(i, id)| (id.as_str(), i)).collect();
+    let index_of: HashMap<&str, usize> = ids
+        .iter()
+        .enumerate()
+        .map(|(i, id)| (id.as_str(), i))
+        .collect();
 
     let mut commits: Vec<CommitNode> = rows
         .iter()
@@ -147,7 +267,9 @@ fn load_repo(path: &Path) -> Result<(LoadedRepo, Vec<String>), String> {
         })
         .collect();
 
-    let current = git_branches.iter().position(|b| b.is_current && !b.is_remote);
+    let current = git_branches
+        .iter()
+        .position(|b| b.is_current && !b.is_remote);
     let active_branch = current.unwrap_or(0);
 
     // Latest commit of the current branch (falls back to HEAD, then the newest commit).
@@ -188,11 +310,110 @@ fn load_repo(path: &Path) -> Result<(LoadedRepo, Vec<String>), String> {
                 .map(|tags| tags.into_iter().map(|t| t.name).collect())
                 .unwrap_or_default(),
             active_branch,
+            working_tree: working_tree_changes(&status),
             commits,
             selected_commit: tip,
         },
         ids,
     ))
+}
+
+fn working_tree_changes(status: &git::RepoStatus) -> WorkingTreeChanges {
+    WorkingTreeChanges {
+        files: status
+            .entries
+            .iter()
+            .filter(|entry| entry.kind != git::EntryKind::Ignored)
+            .map(|entry| WorkingTreeFile {
+                repo_path: entry.path.clone(),
+                display_path: entry
+                    .orig_path
+                    .as_ref()
+                    .map(|original| format!("{original} → {}", entry.path))
+                    .unwrap_or_else(|| entry.path.clone()),
+                status: entry.code.clone(),
+                staged: entry_staged(entry),
+                unstaged: entry_unstaged(entry),
+                untracked: entry.kind == git::EntryKind::Untracked,
+            })
+            .collect(),
+        staged_count: status.staged().count(),
+        unstaged_count: status.unstaged().count(),
+        untracked_count: status.untracked().count(),
+    }
+}
+
+fn revert_entry(client: &GitClient, entry: &git::StatusEntry) -> Result<(), String> {
+    let path = vec![entry.path.clone()];
+    let has_commits = client.has_commits().map_err(|e| e.to_string())?;
+
+    if entry_staged(entry) {
+        client.unstage(&path).map_err(|e| e.to_string())?;
+    }
+
+    if has_commits && entry.kind != git::EntryKind::Untracked {
+        client.discard_changes(&path).map_err(|e| e.to_string())?;
+    }
+
+    if entry.kind == git::EntryKind::Untracked || entry.index == git::ChangeKind::Added {
+        client
+            .clean(&CleanOptions {
+                directories: true,
+                paths: path,
+                ..Default::default()
+            })
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+fn revert_all_entries(client: &GitClient, status: &git::RepoStatus) -> Result<(), String> {
+    let staged_paths: Vec<String> = status
+        .entries
+        .iter()
+        .filter(|entry| entry.kind != git::EntryKind::Ignored && entry_staged(entry))
+        .map(|entry| entry.path.clone())
+        .collect();
+
+    if !staged_paths.is_empty() {
+        client.unstage(&staged_paths).map_err(|e| e.to_string())?;
+    }
+
+    if client.has_commits().map_err(|e| e.to_string())?
+        && status.entries.iter().any(|entry| {
+            entry.kind != git::EntryKind::Ignored && entry.kind != git::EntryKind::Untracked
+        })
+    {
+        client.discard_all_changes().map_err(|e| e.to_string())?;
+    }
+
+    if status.entries.iter().any(|entry| {
+        entry.kind == git::EntryKind::Untracked || entry.index == git::ChangeKind::Added
+    }) {
+        client
+            .clean(&CleanOptions {
+                directories: true,
+                ..Default::default()
+            })
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+fn entry_staged(entry: &git::StatusEntry) -> bool {
+    matches!(
+        entry.kind,
+        git::EntryKind::Ordinary | git::EntryKind::Renamed | git::EntryKind::Unmerged
+    ) && entry.index != git::ChangeKind::Unmodified
+}
+
+fn entry_unstaged(entry: &git::StatusEntry) -> bool {
+    matches!(
+        entry.kind,
+        git::EntryKind::Ordinary | git::EntryKind::Renamed | git::EntryKind::Unmerged
+    ) && entry.worktree != git::ChangeKind::Unmodified
 }
 
 fn commit_files(path: &Path, id: &str) -> Result<Vec<FileChange>, String> {
@@ -259,3 +480,5 @@ fn relative_time(unix_seconds: i64) -> String {
     }
 }
 
+#[cfg(test)]
+mod tests;

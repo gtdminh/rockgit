@@ -1,12 +1,18 @@
+use cacao::button::Button;
 use cacao::color::Color;
-use cacao::foundation::{id, nil, NSString};
+use cacao::foundation::{NSString, id, nil};
 use cacao::image::{Image, ImageView};
 use cacao::layout::{Layout, LayoutConstraint};
 use cacao::objc::{msg_send, sel, sel_impl};
 use cacao::text::{Font, Label, LineBreakMode, TextAlign};
 use cacao::view::{View, ViewDelegate};
+use std::sync::{Arc, Mutex};
 
-use crate::app::views::theme::{color, Rgb};
+use crate::app::{
+    actions::AppAction,
+    send,
+    views::theme::{Rgb, color},
+};
 
 pub const ROW_HEIGHT: f64 = 28.;
 pub const MIN_GRAPH_WIDTH: f64 = 96.;
@@ -15,6 +21,7 @@ pub const DATE_WIDTH: f64 = 110.;
 pub const AUTHOR_WIDTH: f64 = 130.;
 pub const COMMIT_WIDTH: f64 = 70.;
 pub const MAX_PILLS: usize = 3;
+pub const WORKING_TREE_ROW_HEIGHT: f64 = 26.;
 
 /// Two-line row used by the repository and branch lists.
 #[derive(Default)]
@@ -60,15 +67,24 @@ impl SidebarRow {
                 Color::Clear
             });
         }
-        self.title
-            .set_font(&if current { Font::bold_system(13.) } else { Font::system(13.) });
+        self.title.set_font(&if current {
+            Font::bold_system(13.)
+        } else {
+            Font::system(13.)
+        });
         self.title.set_text(title);
         self.subtitle.set_hidden(subtitle.is_empty());
         self.subtitle.set_text(subtitle);
         self.set_tooltip(None);
     }
 
-    pub fn configure_tree_item(&self, title: &str, selected: bool, emphasized: bool, tooltip: Option<&str>) {
+    pub fn configure_tree_item(
+        &self,
+        title: &str,
+        selected: bool,
+        emphasized: bool,
+        tooltip: Option<&str>,
+    ) {
         if let Some(view) = &self.view {
             view.set_background_color(if selected {
                 Color::rgba(113, 76, 86, 180)
@@ -97,17 +113,33 @@ impl ViewDelegate for SidebarRow {
         self.view = Some(view.clone_as_handle());
 
         self.title.set_line_break_mode(LineBreakMode::TruncateTail);
-        self.subtitle.set_line_break_mode(LineBreakMode::TruncateTail);
+        self.subtitle
+            .set_line_break_mode(LineBreakMode::TruncateTail);
         self.subtitle.set_font(&Font::system(10.));
         self.subtitle.set_text_color(Color::SystemGray);
 
         LayoutConstraint::activate(&[
             self.title.top.constraint_equal_to(&view.top).offset(6.),
-            self.title.leading.constraint_equal_to(&view.leading).offset(12.),
-            self.title.trailing.constraint_equal_to(&view.trailing).offset(-12.),
-            self.subtitle.top.constraint_equal_to(&self.title.bottom).offset(2.),
-            self.subtitle.leading.constraint_equal_to(&view.leading).offset(12.),
-            self.subtitle.trailing.constraint_equal_to(&view.trailing).offset(-12.),
+            self.title
+                .leading
+                .constraint_equal_to(&view.leading)
+                .offset(12.),
+            self.title
+                .trailing
+                .constraint_equal_to(&view.trailing)
+                .offset(-12.),
+            self.subtitle
+                .top
+                .constraint_equal_to(&self.title.bottom)
+                .offset(2.),
+            self.subtitle
+                .leading
+                .constraint_equal_to(&view.leading)
+                .offset(12.),
+            self.subtitle
+                .trailing
+                .constraint_equal_to(&view.trailing)
+                .offset(-12.),
         ]);
     }
 }
@@ -183,7 +215,7 @@ impl CommitRow {
                     pill.set_background_color(color(item.rgb));
                     pill.set_hidden(false);
                     Self::set_pill_tooltip(pill, item.tooltip.as_deref());
-                },
+                }
                 None => {
                     if let Some(width) = self.pill_widths.get(index) {
                         width.set_offset(0.);
@@ -192,13 +224,16 @@ impl CommitRow {
                     pill.set_background_color(Color::Clear);
                     pill.set_hidden(true);
                     Self::set_pill_tooltip(pill, None);
-                },
+                }
             }
         }
 
         self.summary.set_text(data.summary);
-        self.summary
-            .set_font(&if data.is_head { Font::bold_system(12.) } else { Font::system(12.) });
+        self.summary.set_font(&if data.is_head {
+            Font::bold_system(12.)
+        } else {
+            Font::system(12.)
+        });
         self.date.set_text(data.date);
         self.author.set_text(data.author);
         self.short_id.set_text(data.short_id);
@@ -244,32 +279,225 @@ impl ViewDelegate for CommitRow {
             .collect();
         LayoutConstraint::activate(&self.pill_widths);
 
-        let graph_width = self.graph.width.constraint_equal_to_constant(MIN_GRAPH_WIDTH);
+        let graph_width = self
+            .graph
+            .width
+            .constraint_equal_to_constant(MIN_GRAPH_WIDTH);
         LayoutConstraint::activate(&[graph_width.clone()]);
         self.graph_width = Some(graph_width);
         LayoutConstraint::activate(&[
             self.graph.top.constraint_equal_to(&view.top),
             self.graph.leading.constraint_equal_to(&view.leading),
             self.graph.height.constraint_equal_to_constant(ROW_HEIGHT),
-            self.pills[0].leading.constraint_equal_to(&self.graph.trailing).offset(8.),
+            self.pills[0]
+                .leading
+                .constraint_equal_to(&self.graph.trailing)
+                .offset(8.),
             self.pills[0].center_y.constraint_equal_to(&view.center_y),
-            self.pills[1].leading.constraint_equal_to(&self.pills[0].trailing).offset(4.),
+            self.pills[1]
+                .leading
+                .constraint_equal_to(&self.pills[0].trailing)
+                .offset(4.),
             self.pills[1].center_y.constraint_equal_to(&view.center_y),
-            self.pills[2].leading.constraint_equal_to(&self.pills[1].trailing).offset(4.),
+            self.pills[2]
+                .leading
+                .constraint_equal_to(&self.pills[1].trailing)
+                .offset(4.),
             self.pills[2].center_y.constraint_equal_to(&view.center_y),
-            self.summary.leading.constraint_equal_to(&self.pills[2].trailing).offset(6.),
-            self.summary.trailing.constraint_less_than_or_equal_to(&self.date.leading).offset(-8.),
+            self.summary
+                .leading
+                .constraint_equal_to(&self.pills[2].trailing)
+                .offset(6.),
+            self.summary
+                .trailing
+                .constraint_less_than_or_equal_to(&self.date.leading)
+                .offset(-8.),
             self.summary.center_y.constraint_equal_to(&view.center_y),
-            self.date.trailing.constraint_equal_to(&self.author.leading).offset(-8.),
+            self.date
+                .trailing
+                .constraint_equal_to(&self.author.leading)
+                .offset(-8.),
             self.date.width.constraint_equal_to_constant(DATE_WIDTH),
             self.date.center_y.constraint_equal_to(&view.center_y),
-            self.author.trailing.constraint_equal_to(&self.short_id.leading).offset(-8.),
+            self.author
+                .trailing
+                .constraint_equal_to(&self.short_id.leading)
+                .offset(-8.),
             self.author.width.constraint_equal_to_constant(AUTHOR_WIDTH),
             self.author.center_y.constraint_equal_to(&view.center_y),
-            self.short_id.trailing.constraint_equal_to(&view.trailing).offset(-12.),
-            self.short_id.width.constraint_equal_to_constant(COMMIT_WIDTH),
+            self.short_id
+                .trailing
+                .constraint_equal_to(&view.trailing)
+                .offset(-12.),
+            self.short_id
+                .width
+                .constraint_equal_to_constant(COMMIT_WIDTH),
             self.short_id.center_y.constraint_equal_to(&view.center_y),
         ]);
     }
 }
 
+pub struct WorkingTreeRow {
+    view: Option<View>,
+    icon: Label,
+    name: Label,
+    parent_path: Label,
+    section_count: Label,
+    status: Label,
+    revert: Button,
+    action_path: Arc<Mutex<Option<String>>>,
+}
+
+pub struct WorkingTreeRowData<'a> {
+    pub icon: &'a str,
+    pub status: &'a str,
+    pub name: &'a str,
+    pub parent_path: &'a str,
+    pub display_path: &'a str,
+    pub repo_path: &'a str,
+}
+
+impl Default for WorkingTreeRow {
+    fn default() -> Self {
+        Self {
+            view: None,
+            icon: Label::new(),
+            name: Label::new(),
+            parent_path: Label::new(),
+            section_count: Label::new(),
+            status: Label::new(),
+            revert: Button::new("↺"),
+            action_path: Arc::new(Mutex::new(None)),
+        }
+    }
+}
+
+impl WorkingTreeRow {
+    pub fn configure_header(&self, title: &str, count: usize, expanded: bool) {
+        if let Some(view) = &self.view {
+            view.set_background_color(Color::Clear);
+        }
+        self.icon.set_hidden(true);
+        self.parent_path.set_hidden(true);
+        self.section_count.set_hidden(false);
+        self.status.set_hidden(true);
+        self.revert.set_hidden(true);
+        self.name.set_font(&Font::bold_system(12.));
+        self.name.set_text(&format!("{} {title}", if expanded { "▾" } else { "▸" }));
+        self.section_count.set_text(&count.to_string());
+        if let Ok(mut action_path) = self.action_path.lock() {
+            *action_path = None;
+        }
+    }
+
+    pub fn configure_file(&self, data: &WorkingTreeRowData) {
+        if let Some(view) = &self.view {
+            view.set_background_color(Color::Clear);
+        }
+
+        self.icon.set_hidden(false);
+        self.parent_path.set_hidden(data.parent_path.is_empty());
+        self.section_count.set_hidden(true);
+        self.status.set_hidden(false);
+        self.revert.set_hidden(false);
+        self.icon.set_text(data.icon);
+        self.status.set_text(data.status);
+        self.name.set_font(&Font::system(12.));
+        self.name.set_text(data.name);
+        self.parent_path.set_text(data.parent_path);
+        if let Some(view) = &self.view {
+            view.objc.with_mut(|obj| unsafe {
+                let tooltip = NSString::new(data.display_path);
+                let _: () = msg_send![obj, setToolTip: tooltip];
+            });
+        }
+        if let Ok(mut action_path) = self.action_path.lock() {
+            *action_path = Some(data.repo_path.to_owned());
+        }
+    }
+}
+
+impl ViewDelegate for WorkingTreeRow {
+    const NAME: &'static str = "RockGitWorkingTreeRow";
+
+    fn did_load(&mut self, view: View) {
+        self.view = Some(view.clone_as_handle());
+        self.icon.set_font(&Font::system(11.));
+        self.icon.set_text_color(Color::SystemOrange);
+        self.name.set_max_number_of_lines(1);
+        self.name.set_line_break_mode(LineBreakMode::TruncateTail);
+        self.parent_path.set_font(&Font::system(11.));
+        self.parent_path.set_text_color(Color::SystemGray);
+        self.parent_path.set_max_number_of_lines(1);
+        self.parent_path
+            .set_line_break_mode(LineBreakMode::TruncateTail);
+        self.section_count.set_font(&Font::bold_system(11.));
+        self.section_count.set_text_color(Color::SystemGray);
+        self.status.set_font(&Font::bold_system(11.));
+        self.status.set_text_color(Color::SystemGray);
+        self.revert.set_font(&Font::system(11.));
+
+        let action_path = self.action_path.clone();
+        self.revert.set_action(move || {
+            let path = action_path.lock().ok().and_then(|guard| guard.clone());
+            if let Some(path) = path {
+                send(AppAction::RevertWorkingTreeFile(path));
+            }
+        });
+
+        view.add_subview(&self.icon);
+        view.add_subview(&self.name);
+        view.add_subview(&self.parent_path);
+        view.add_subview(&self.section_count);
+        view.add_subview(&self.status);
+        view.add_subview(&self.revert);
+
+        LayoutConstraint::activate(&[
+            self.icon.center_y.constraint_equal_to(&view.center_y),
+            self.icon
+                .leading
+                .constraint_equal_to(&view.leading)
+                .offset(10.),
+            self.icon.width.constraint_equal_to_constant(14.),
+            self.name.center_y.constraint_equal_to(&view.center_y),
+            self.name
+                .leading
+                .constraint_equal_to(&self.icon.trailing)
+                .offset(6.),
+            self.parent_path
+                .center_y
+                .constraint_equal_to(&view.center_y),
+            self.parent_path
+                .leading
+                .constraint_equal_to(&self.name.trailing)
+                .offset(6.),
+            self.section_count
+                .center_y
+                .constraint_equal_to(&view.center_y),
+            self.section_count
+                .trailing
+                .constraint_equal_to(&view.trailing)
+                .offset(-12.),
+            self.status.center_y.constraint_equal_to(&view.center_y),
+            self.status
+                .trailing
+                .constraint_equal_to(&self.revert.leading)
+                .offset(-8.),
+            self.status.width.constraint_equal_to_constant(16.),
+            self.revert.center_y.constraint_equal_to(&view.center_y),
+            self.revert
+                .trailing
+                .constraint_equal_to(&view.trailing)
+                .offset(-8.),
+            self.revert.width.constraint_equal_to_constant(24.),
+            self.name
+                .trailing
+                .constraint_less_than_or_equal_to(&self.status.leading)
+                .offset(-8.),
+            self.parent_path
+                .trailing
+                .constraint_less_than_or_equal_to(&self.status.leading)
+                .offset(-8.),
+        ]);
+    }
+}

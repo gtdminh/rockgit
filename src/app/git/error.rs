@@ -58,10 +58,14 @@ impl fmt::Display for GitError {
             GitError::GitNotFound(e) => write!(f, "git executable not found: {e}"),
             GitError::Io(e) => write!(f, "I/O error: {e}"),
             GitError::NotARepository(p) => write!(f, "not a git repository: {}", p.display()),
-            GitError::Command { command, code, stderr } => {
+            GitError::Command {
+                command,
+                code,
+                stderr,
+            } => {
                 let code = code.map_or("signal".to_string(), |c| c.to_string());
                 write!(f, "`{command}` failed (exit {code}): {}", stderr.trim())
-            },
+            }
             GitError::Timeout { command } => write!(f, "`{command}` timed out"),
             GitError::Parse(m) => write!(f, "could not parse git output: {m}"),
             GitError::InvalidInput(m) => write!(f, "invalid input: {m}"),
@@ -99,7 +103,7 @@ pub(crate) fn redact(s: &str) -> String {
             Some(at) => {
                 out.push_str("***@");
                 out.push_str(&authority[at + 1..]);
-            },
+            }
             None => out.push_str(authority),
         }
         rest = remainder;

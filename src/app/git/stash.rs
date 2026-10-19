@@ -32,8 +32,7 @@ impl GitClient {
     }
 
     pub fn stash_list(&self) -> GitResult<Vec<StashEntry>> {
-        let args = Args::new("stash")
-            .args(["list", "--format=%gd%x1f%H%x1f%gs%x1f%ct"]);
+        let args = Args::new("stash").args(["list", "--format=%gd%x1f%H%x1f%gs%x1f%ct"]);
         let out = self.run(args)?.stdout_str();
         Ok(out
             .lines()
@@ -70,7 +69,8 @@ impl GitClient {
     }
 
     pub fn stash_drop(&self, index: usize) -> GitResult<()> {
-        self.run(Args::new("stash").arg("drop").arg(stash_ref(index))).map(drop)
+        self.run(Args::new("stash").arg("drop").arg(stash_ref(index)))
+            .map(drop)
     }
 
     /// Deletes every stash. Destructive.
@@ -81,8 +81,13 @@ impl GitClient {
     /// Creates a branch from the commit the stash was made on, applies the stash, then drops it.
     pub fn stash_to_branch(&self, branch: &str, index: usize) -> GitResult<()> {
         safe_ref(branch)?;
-        self.run(Args::new("stash").arg("branch").arg(branch).arg(stash_ref(index)))
-            .map(drop)
+        self.run(
+            Args::new("stash")
+                .arg("branch")
+                .arg(branch)
+                .arg(stash_ref(index)),
+        )
+        .map(drop)
     }
 
     /// Diff target for viewing a stash: `diff(&DiffTarget::Commit(stash_rev(0)), ..)`.

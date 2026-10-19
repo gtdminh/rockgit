@@ -15,7 +15,8 @@ use cacao::appkit::window::{Window, WindowConfig};
 use cacao::appkit::{App, AppDelegate};
 use cacao::button::Button;
 use cacao::color::Color;
-use cacao::foundation::{nil, NSString};
+use cacao::events::EventModifierFlag;
+use cacao::foundation::{NSString, nil};
 use cacao::layout::{Layout, LayoutConstraint};
 use cacao::listview::ListView;
 use cacao::notification_center::Dispatcher;
@@ -28,9 +29,10 @@ use controller::AppController;
 use model::{AppModel, SharedModel};
 use views::{
     details::Details,
-    graph::{selected_row, CommitList},
+    graph::{CommitList, selected_row},
     header::CommitHeader,
-    sidebar::{open_repository_button, BranchList, RepoList},
+    settings::SettingsDialog,
+    sidebar::{BranchList, RepoList, open_repository_button},
     toolbar::Toolbar,
 };
 
@@ -119,6 +121,7 @@ struct RockGitApp {
     commits: ListView<CommitList>,
     header: CommitHeader,
     details: Details,
+    settings: SettingsDialog,
     status: Label,
 }
 
@@ -133,7 +136,8 @@ impl RockGitApp {
             branches: ListView::with(BranchList::new(model.clone())),
             commits: ListView::with(CommitList::new(model.clone())),
             header: CommitHeader::new(),
-            details: Details::new(),
+            details: Details::new(model.clone()),
+            settings: SettingsDialog::new(),
             status: Label::new(),
             model,
         }
@@ -168,54 +172,190 @@ impl RockGitApp {
 
         LayoutConstraint::activate(&[
             // Toolbar row.
-            toolbar.fetch.top.constraint_equal_to(&content.top).offset(46.),
-            toolbar.fetch.leading.constraint_equal_to(&content.leading).offset(12.),
-            toolbar.pull.top.constraint_equal_to(&content.top).offset(46.),
-            toolbar.pull.leading.constraint_equal_to(&toolbar.fetch.trailing).offset(6.),
-            toolbar.push.top.constraint_equal_to(&content.top).offset(46.),
-            toolbar.push.leading.constraint_equal_to(&toolbar.pull.trailing).offset(6.),
-            toolbar.refresh.top.constraint_equal_to(&content.top).offset(46.),
-            toolbar.refresh.leading.constraint_equal_to(&toolbar.push.trailing).offset(6.),
-            toolbar.search.top.constraint_equal_to(&content.top).offset(47.),
-            toolbar.search.leading.constraint_equal_to(&toolbar.refresh.trailing).offset(16.),
+            toolbar
+                .fetch
+                .top
+                .constraint_equal_to(&content.top)
+                .offset(46.),
+            toolbar
+                .fetch
+                .leading
+                .constraint_equal_to(&content.leading)
+                .offset(12.),
+            toolbar
+                .pull
+                .top
+                .constraint_equal_to(&content.top)
+                .offset(46.),
+            toolbar
+                .pull
+                .leading
+                .constraint_equal_to(&toolbar.fetch.trailing)
+                .offset(6.),
+            toolbar
+                .push
+                .top
+                .constraint_equal_to(&content.top)
+                .offset(46.),
+            toolbar
+                .push
+                .leading
+                .constraint_equal_to(&toolbar.pull.trailing)
+                .offset(6.),
+            toolbar
+                .refresh
+                .top
+                .constraint_equal_to(&content.top)
+                .offset(46.),
+            toolbar
+                .refresh
+                .leading
+                .constraint_equal_to(&toolbar.push.trailing)
+                .offset(6.),
+            toolbar
+                .search
+                .top
+                .constraint_equal_to(&content.top)
+                .offset(47.),
+            toolbar
+                .search
+                .leading
+                .constraint_equal_to(&toolbar.refresh.trailing)
+                .offset(16.),
             toolbar.search.width.constraint_equal_to_constant(260.),
-            toolbar.count.top.constraint_equal_to(&content.top).offset(49.),
-            toolbar.count.leading.constraint_equal_to(&toolbar.search.trailing).offset(16.),
+            toolbar
+                .count
+                .top
+                .constraint_equal_to(&content.top)
+                .offset(49.),
+            toolbar
+                .count
+                .leading
+                .constraint_equal_to(&toolbar.search.trailing)
+                .offset(16.),
             // Left column: repositories above branches.
-            self.open_repo.top.constraint_equal_to(&toolbar.fetch.bottom).offset(10.),
-            self.open_repo.leading.constraint_equal_to(&content.leading).offset(12.),
-            self.repos.top.constraint_equal_to(&self.open_repo.bottom).offset(6.),
+            self.open_repo
+                .top
+                .constraint_equal_to(&toolbar.fetch.bottom)
+                .offset(10.),
+            self.open_repo
+                .leading
+                .constraint_equal_to(&content.leading)
+                .offset(12.),
+            self.repos
+                .top
+                .constraint_equal_to(&self.open_repo.bottom)
+                .offset(6.),
             self.repos.leading.constraint_equal_to(&content.leading),
             self.repos.width.constraint_equal_to_constant(260.),
             self.repos.height.constraint_equal_to_constant(220.),
-            self.branches.top.constraint_equal_to(&self.repos.bottom).offset(8.),
+            self.branches
+                .top
+                .constraint_equal_to(&self.repos.bottom)
+                .offset(8.),
             self.branches.leading.constraint_equal_to(&content.leading),
             self.branches.width.constraint_equal_to_constant(260.),
-            self.branches.bottom.constraint_equal_to(&self.status.top).offset(-8.),
+            self.branches
+                .bottom
+                .constraint_equal_to(&self.status.top)
+                .offset(-8.),
             // Right column: commit details.
-            self.details.container.top.constraint_equal_to(&toolbar.fetch.bottom).offset(10.),
-            self.details.container.trailing.constraint_equal_to(&content.trailing),
-            self.details.container.bottom.constraint_equal_to(&self.status.top).offset(-8.),
+            self.details
+                .container
+                .top
+                .constraint_equal_to(&toolbar.fetch.bottom)
+                .offset(10.),
+            self.details
+                .container
+                .trailing
+                .constraint_equal_to(&content.trailing),
+            self.details
+                .container
+                .bottom
+                .constraint_equal_to(&self.status.top)
+                .offset(-8.),
             // Center: branch filter bar, column header, then the commit graph.
-            toolbar.branches_label.top.constraint_equal_to(&toolbar.fetch.bottom).offset(16.),
-            toolbar.branches_label.leading.constraint_equal_to(&self.repos.trailing).offset(16.),
-            toolbar.branch_select.top.constraint_equal_to(&toolbar.fetch.bottom).offset(10.),
-            toolbar.branch_select.leading.constraint_equal_to(&toolbar.branches_label.trailing).offset(8.),
-            toolbar.branch_select.width.constraint_equal_to_constant(260.),
-            toolbar.remote_switch.top.constraint_equal_to(&toolbar.fetch.bottom).offset(13.),
-            toolbar.remote_switch.leading.constraint_equal_to(&toolbar.branch_select.trailing).offset(16.),
-            self.header.container.top.constraint_equal_to(&toolbar.branch_select.bottom).offset(8.),
-            self.header.container.leading.constraint_equal_to(&self.repos.trailing).offset(8.),
-            self.header.container.trailing.constraint_equal_to(&self.details.container.leading).offset(-8.),
-            self.header.container.height.constraint_equal_to_constant(22.),
-            self.commits.top.constraint_equal_to(&self.header.container.bottom),
-            self.commits.leading.constraint_equal_to(&self.repos.trailing).offset(8.),
-            self.commits.trailing.constraint_equal_to(&self.details.container.leading).offset(-8.),
-            self.commits.bottom.constraint_equal_to(&self.status.top).offset(-8.),
+            toolbar
+                .branches_label
+                .top
+                .constraint_equal_to(&toolbar.fetch.bottom)
+                .offset(16.),
+            toolbar
+                .branches_label
+                .leading
+                .constraint_equal_to(&self.repos.trailing)
+                .offset(16.),
+            toolbar
+                .branch_select
+                .top
+                .constraint_equal_to(&toolbar.fetch.bottom)
+                .offset(10.),
+            toolbar
+                .branch_select
+                .leading
+                .constraint_equal_to(&toolbar.branches_label.trailing)
+                .offset(8.),
+            toolbar
+                .branch_select
+                .width
+                .constraint_equal_to_constant(260.),
+            toolbar
+                .remote_switch
+                .top
+                .constraint_equal_to(&toolbar.fetch.bottom)
+                .offset(13.),
+            toolbar
+                .remote_switch
+                .leading
+                .constraint_equal_to(&toolbar.branch_select.trailing)
+                .offset(16.),
+            self.header
+                .container
+                .top
+                .constraint_equal_to(&toolbar.branch_select.bottom)
+                .offset(8.),
+            self.header
+                .container
+                .leading
+                .constraint_equal_to(&self.repos.trailing)
+                .offset(8.),
+            self.header
+                .container
+                .trailing
+                .constraint_equal_to(&self.details.container.leading)
+                .offset(-8.),
+            self.header
+                .container
+                .height
+                .constraint_equal_to_constant(22.),
+            self.commits
+                .top
+                .constraint_equal_to(&self.header.container.bottom),
+            self.commits
+                .leading
+                .constraint_equal_to(&self.repos.trailing)
+                .offset(8.),
+            self.commits
+                .trailing
+                .constraint_equal_to(&self.details.container.leading)
+                .offset(-8.),
+            self.commits
+                .bottom
+                .constraint_equal_to(&self.status.top)
+                .offset(-8.),
             // Status bar.
-            self.status.leading.constraint_equal_to(&content.leading).offset(12.),
-            self.status.trailing.constraint_equal_to(&content.trailing).offset(-12.),
-            self.status.bottom.constraint_equal_to(&content.bottom).offset(-8.),
+            self.status
+                .leading
+                .constraint_equal_to(&content.leading)
+                .offset(12.),
+            self.status
+                .trailing
+                .constraint_equal_to(&content.trailing)
+                .offset(-12.),
+            self.status
+                .bottom
+                .constraint_equal_to(&content.bottom)
+                .offset(-8.),
         ]);
     }
 
@@ -228,11 +368,19 @@ impl RockGitApp {
         self.toolbar.update(&model);
         self.details.update(&model);
 
-        let repo = model.active_repository().map(|r| r.name.as_str()).unwrap_or("-");
-        let branch = model.active_branch().map(|b| b.name.as_str()).unwrap_or("-");
+        let repo = model
+            .active_repository()
+            .map(|r| r.name.as_str())
+            .unwrap_or("-");
+        let branch = model
+            .active_branch()
+            .map(|b| b.name.as_str())
+            .unwrap_or("-");
         let branch_label = abbreviate_branch_name(branch, STATUS_BRANCH_MAX_CHARS);
-        self.status
-            .set_text(format!("{}  |  {}  |  {}", model.last_action, repo, branch_label));
+        self.status.set_text(format!(
+            "{}  |  {}  |  {}",
+            model.last_action, repo, branch_label
+        ));
         set_label_tooltip(
             &self.status,
             (branch_label != branch && branch != "-").then_some(branch),
@@ -259,27 +407,22 @@ impl RockGitApp {
             self.commits.select_row_indexes(&[], false);
         }
     }
+
+    fn open_settings_dialog(&self) {
+        let config = self.model.lock().unwrap().config.clone();
+        self.settings.show(&config);
+    }
+
+    fn save_settings_dialog(&self) -> Result<AppAction, String> {
+        let config = self.settings.read_config()?;
+        persistent::save_config(&config)?;
+        self.settings.close();
+        Ok(AppAction::UpdateConfig(config))
+    }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::abbreviate_branch_name;
-
-    #[test]
-    fn keeps_short_branch_names_unchanged() {
-        assert_eq!(abbreviate_branch_name("feature/login", 48), "feature/login");
-    }
-
-    #[test]
-    fn abbreviates_long_branch_names_in_the_middle() {
-        let branch = "origin/feature/docker/idp-release/goldenimage-python/python-idp-v3.13-2026_07_19-00cd882";
-        let abbreviated = abbreviate_branch_name(branch, 48);
-
-        assert!(abbreviated.chars().count() <= 48);
-        assert_eq!(abbreviated, "origin/…/python-idp-v3.13-2026_07_19-00cd882");
-        assert!(abbreviated.contains('…'));
-    }
-}
+mod tests;
 
 impl AppDelegate for RockGitApp {
     fn did_finish_launching(&self) {
@@ -287,6 +430,11 @@ impl AppDelegate for RockGitApp {
             Menu::new(
                 "",
                 vec![
+                    MenuItem::new("Settings…")
+                        .key(",")
+                        .modifiers(&[EventModifierFlag::Command])
+                        .action(|| send_ui(AppAction::OpenSettingsDialog)),
+                    MenuItem::Separator,
                     MenuItem::Hide,
                     MenuItem::HideOthers,
                     MenuItem::ShowAll,
@@ -335,14 +483,35 @@ impl Dispatcher for RockGitApp {
     fn on_ui_message(&self, action: AppAction) {
         // The popup can't carry its selection in the callback, so read it here.
         let action = match action {
+            AppAction::OpenSettingsDialog => {
+                self.open_settings_dialog();
+                return;
+            }
+            AppAction::CloseSettingsDialog => {
+                self.settings.close();
+                return;
+            }
+            AppAction::SaveSettingsDialog => match self.save_settings_dialog() {
+                Ok(action) => {
+                    bus::publish(action.clone());
+                    action
+                }
+                Err(message) => {
+                    self.settings.show_error(&message);
+                    return;
+                }
+            },
             AppAction::BranchFilterChanged => {
                 let selected = self.toolbar.branch_select.get_selected_index();
                 AppAction::SetBranchFilter(selected.checked_sub(1))
-            },
+            }
             other => other,
         };
 
-        let navigated = matches!(action, AppAction::SelectOlderCommit | AppAction::SelectNewerCommit);
+        let navigated = matches!(
+            action,
+            AppAction::SelectOlderCommit | AppAction::SelectNewerCommit
+        );
 
         let selected_after = {
             let mut model = self.model.lock().unwrap();
@@ -357,4 +526,3 @@ impl Dispatcher for RockGitApp {
         self.refresh();
     }
 }
-

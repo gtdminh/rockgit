@@ -42,7 +42,11 @@ impl ListViewDelegate for RepoList {
         if let Some(cell) = &view.delegate {
             let model = self.model.lock().unwrap();
             if let Some(repo) = model.repositories.get(row) {
-                let dirty = if repo.has_uncommitted_changes { " • dirty" } else { "" };
+                let dirty = if repo.has_uncommitted_changes {
+                    " • dirty"
+                } else {
+                    ""
+                };
                 cell.configure(
                     &format!("{}{dirty}", repo.name),
                     &format!("{} • {} branches", repo.path, repo.branch_count),
@@ -129,7 +133,12 @@ impl ListViewDelegate for BranchList {
                     } => {
                         let arrow = if *expanded { "▾" } else { "▸" };
                         let indent = "  ".repeat(*depth);
-                        cell.configure_tree_item(&format!("{indent}{arrow} {title}"), false, true, None);
+                        cell.configure_tree_item(
+                            &format!("{indent}{arrow} {title}"),
+                            false,
+                            true,
+                            None,
+                        );
                     }
                     SidebarItem::Branch {
                         index,
@@ -157,7 +166,12 @@ impl ListViewDelegate for BranchList {
                     SidebarItem::Tag { index, depth } => {
                         let indent = "  ".repeat(*depth);
                         if let Some(tag) = model.tags.get(*index) {
-                            cell.configure_tree_item(&format!("{indent}◇ {tag}"), false, false, None);
+                            cell.configure_tree_item(
+                                &format!("{indent}◇ {tag}"),
+                                false,
+                                false,
+                                None,
+                            );
                         }
                     }
                 }
@@ -189,4 +203,3 @@ impl ListViewDelegate for BranchList {
         }
     }
 }
-

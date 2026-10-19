@@ -69,22 +69,28 @@ pub struct RepoStatus {
 impl RepoStatus {
     pub fn staged(&self) -> impl Iterator<Item = &StatusEntry> {
         self.entries.iter().filter(|e| {
-            matches!(e.kind, EntryKind::Ordinary | EntryKind::Renamed) && e.index != ChangeKind::Unmodified
+            matches!(e.kind, EntryKind::Ordinary | EntryKind::Renamed)
+                && e.index != ChangeKind::Unmodified
         })
     }
 
     pub fn unstaged(&self) -> impl Iterator<Item = &StatusEntry> {
         self.entries.iter().filter(|e| {
-            matches!(e.kind, EntryKind::Ordinary | EntryKind::Renamed) && e.worktree != ChangeKind::Unmodified
+            matches!(e.kind, EntryKind::Ordinary | EntryKind::Renamed)
+                && e.worktree != ChangeKind::Unmodified
         })
     }
 
     pub fn untracked(&self) -> impl Iterator<Item = &StatusEntry> {
-        self.entries.iter().filter(|e| e.kind == EntryKind::Untracked)
+        self.entries
+            .iter()
+            .filter(|e| e.kind == EntryKind::Untracked)
     }
 
     pub fn conflicted(&self) -> impl Iterator<Item = &StatusEntry> {
-        self.entries.iter().filter(|e| e.kind == EntryKind::Unmerged)
+        self.entries
+            .iter()
+            .filter(|e| e.kind == EntryKind::Unmerged)
     }
 
     pub fn is_clean(&self) -> bool {
@@ -263,7 +269,10 @@ pub enum RepoState {
 pub enum OpOutcome {
     Success(String),
     /// Git stopped because of conflicts; resolve them, stage, then `*_continue`, or `*_abort`.
-    Conflict { files: Vec<String>, output: String },
+    Conflict {
+        files: Vec<String>,
+        output: String,
+    },
 }
 
 impl OpOutcome {

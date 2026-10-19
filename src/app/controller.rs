@@ -10,9 +10,23 @@ pub struct AppController;
 impl AppController {
     pub fn dispatch(&mut self, model: &mut AppModel, action: AppAction) {
         match action {
+            AppAction::OpenSettingsDialog
+            | AppAction::SaveSettingsDialog
+            | AppAction::CloseSettingsDialog => {}
+            AppAction::UpdateConfig(config) => self.update_config(model, config),
             AppAction::SelectRepository(index) => self.select_repository(model, index),
             AppAction::SelectBranch(index) => self.select_branch(model, index),
             AppAction::ToggleBranchListNode(id) => self.toggle_branch_list_node(model, &id),
+            AppAction::ToggleWorkingTreeListNode(id) => {
+                self.toggle_working_tree_list_node(model, &id)
+            },
+            AppAction::SelectUncommittedChanges => self.select_uncommitted_changes(model),
+            AppAction::RevertWorkingTreeFile(path) => self.revert_working_tree_file(model, &path),
+            AppAction::RevertAllWorkingTreeChanges => self.revert_all_working_tree_changes(model),
+            AppAction::CommitWorkingTree {
+                message,
+                push_after,
+            } => self.commit_working_tree(model, &message, push_after),
             AppAction::SelectCommit(index) => self.select_commit(model, index),
             AppAction::SelectOlderCommit => self.select_older_commit(model),
             AppAction::SelectNewerCommit => self.select_newer_commit(model),
@@ -35,6 +49,7 @@ impl AppController {
             }
             AppAction::RepositoryLoaded(loaded) => self.repository_loaded(model, *loaded),
             AppAction::RepositoryLoadFailed(message) => model.last_action = message,
+            AppAction::SetLastAction(message) => model.last_action = message,
             AppAction::CommitFilesLoaded { index, id, files } => {
                 if let Some(commit) = model.commits.get_mut(index) {
                     if commit.id == id {
@@ -48,13 +63,22 @@ impl AppController {
     /// Adds (or replaces) the repository, then shows its branches and graph with the latest
     /// commit of the current branch selected.
     fn repository_loaded(&mut self, model: &mut AppModel, loaded: LoadedRepo) {
+        let keep_uncommitted_selection = model.selected_uncommitted
+            && model
+                .active_repository()
+                .is_some_and(|repo| repo.path == loaded.path)
+            && loaded.working_tree.has_changes();
         let repository = Repository {
             name: loaded.name.clone(),
             path: loaded.path.clone(),
             branch_count: loaded.branches.len(),
-            has_uncommitted_changes: false,
+            has_uncommitted_changes: loaded.working_tree.has_changes(),
         };
-        if let Some(index) = model.repositories.iter().position(|repo| repo.path == loaded.path) {
+        if let Some(index) = model
+            .repositories
+            .iter()
+            .position(|repo| repo.path == loaded.path)
+        {
             model.repositories.remove(index);
         }
         model.repositories.insert(0, repository);
@@ -63,8 +87,10 @@ impl AppController {
         model.branches = loaded.branches;
         model.tags = loaded.tags;
         model.active_branch = loaded.active_branch;
+        model.working_tree = loaded.working_tree;
         model.commits = loaded.commits;
         model.selected_commit = loaded.selected_commit;
+        model.selected_uncommitted = keep_uncommitted_selection;
         model.branch_filter = None;
         model.last_action = match persistent::save_recent_repositories(&model.repositories) {
             Ok(()) => format!("Loaded repository {}", loaded.name),
@@ -98,20 +124,83 @@ impl AppController {
         };
     }
 
+    fn toggle_working_tree_list_node(&mut self, model: &mut AppModel, id: &str) {
+        let expanded = model.toggle_working_tree_node(id);
+        model.last_action = if expanded {
+            format!("Expanded {}", id.rsplit('/').next().unwrap_or(id))
+        } else {
+            format!("Collapsed {}", id.rsplit('/').next().unwrap_or(id))
+        };
+    }
+
     fn select_commit(&mut self, model: &mut AppModel, index: usize) {
         if let Some(commit) = model.commits.get(index) {
+            model.selected_uncommitted = false;
             model.selected_commit = index;
             model.last_action = format!("Selected commit {}", commit.short_id);
         }
     }
 
+    fn select_uncommitted_changes(&mut self, model: &mut AppModel) {
+        if model.has_uncommitted_changes() {
+            model.selected_uncommitted = true;
+            model.last_action = format!(
+                "Selected {} uncommitted change{}",
+                model.working_tree.total_count(),
+                if model.working_tree.total_count() == 1 {
+                    ""
+                } else {
+                    "s"
+                }
+            );
+        }
+    }
+
+    fn revert_working_tree_file(&mut self, model: &mut AppModel, path: &str) {
+        model.last_action = format!("Reverting {path}...");
+    }
+
+    fn revert_all_working_tree_changes(&mut self, model: &mut AppModel) {
+        model.last_action = "Reverting all working tree changes...".to_owned();
+    }
+
+    fn commit_working_tree(&mut self, model: &mut AppModel, message: &str, push_after: bool) {
+        let message = message.trim();
+        model.last_action = if message.is_empty() {
+            "Commit message is required".to_owned()
+        } else if push_after {
+            "Committing changes and pushing...".to_owned()
+        } else {
+            "Committing changes...".to_owned()
+        };
+    }
+
     fn select_older_commit(&mut self, model: &mut AppModel) {
+        if model.selected_uncommitted {
+            if let Some(index) = model.visible_commits().first().copied() {
+                self.select_commit(model, index);
+            }
+            return;
+        }
+
         if let Some(index) = model.older_commit_index() {
             self.select_commit(model, index);
         }
     }
 
     fn select_newer_commit(&mut self, model: &mut AppModel) {
+        if model.selected_uncommitted {
+            return;
+        }
+
+        let visible = model.visible_commits();
+        if visible.first().copied() == Some(model.selected_commit)
+            && model.has_uncommitted_changes()
+        {
+            self.select_uncommitted_changes(model);
+            return;
+        }
+
         if let Some(index) = model.newer_commit_index() {
             self.select_commit(model, index);
         }
@@ -143,6 +232,11 @@ impl AppController {
         };
     }
 
+    fn update_config(&mut self, model: &mut AppModel, config: crate::app::model::AppConfig) {
+        model.config = config;
+        model.last_action = "Saved settings".to_owned();
+    }
+
     fn run_git_operation(&mut self, model: &mut AppModel, operation: GitOperation) {
         let repo_name = model
             .active_repository()
@@ -156,7 +250,10 @@ impl AppController {
         model.last_action = match operation {
             GitOperation::Fetch => format!("{} requested for {repo_name}", operation.label()),
             GitOperation::Pull | GitOperation::Push => {
-                format!("{} requested for {repo_name} on {branch_name}", operation.label())
+                format!(
+                    "{} requested for {repo_name} on {branch_name}",
+                    operation.label()
+                )
             }
             GitOperation::Refresh => format!("{} requested for {repo_name}", operation.label()),
         };
@@ -164,47 +261,4 @@ impl AppController {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::app::{
-        actions::{AppAction, GitOperation},
-        model::AppModel,
-    };
-
-    #[test]
-    fn select_repository_updates_model() {
-        let mut model = AppModel::sample();
-        let mut controller = AppController;
-
-        controller.dispatch(&mut model, AppAction::SelectRepository(2));
-
-        assert_eq!(model.active_repo, 2);
-        assert!(model.last_action.contains("infra-config"));
-    }
-
-    #[test]
-    fn selecting_older_commit_stops_at_end() {
-        let mut model = AppModel::sample();
-        let mut controller = AppController;
-        model.selected_commit = model.commits.len() - 1;
-
-        controller.dispatch(&mut model, AppAction::SelectOlderCommit);
-
-        assert_eq!(model.selected_commit, model.commits.len() - 1);
-    }
-
-    #[test]
-    fn run_operation_uses_active_context() {
-        let mut model = AppModel::sample();
-        let mut controller = AppController;
-        model.active_repo = 0;
-        model.active_branch = 1;
-
-        controller.dispatch(&mut model, AppAction::RunGitOperation(GitOperation::Push));
-
-        assert!(model.last_action.contains("Push requested"));
-        assert!(model.last_action.contains("RockGit"));
-        assert!(model.last_action.contains("feature/graph-ui"));
-    }
-}
-
+mod tests;

@@ -29,7 +29,13 @@ impl GitClient {
     }
 
     /// Creates a tag at `target` (default HEAD). A `message` makes it an annotated tag.
-    pub fn create_tag(&self, name: &str, target: Option<&str>, message: Option<&str>, force: bool) -> GitResult<()> {
+    pub fn create_tag(
+        &self,
+        name: &str,
+        target: Option<&str>,
+        message: Option<&str>,
+        force: bool,
+    ) -> GitResult<()> {
         safe_ref(name)?;
         if let Some(t) = target {
             safe_ref(t)?;
@@ -40,27 +46,37 @@ impl GitClient {
             .flag(message.is_some(), "--file=-")
             .arg(name)
             .opt(target);
-        self.run_stdin(args, message.unwrap_or_default().as_bytes()).map(drop)
+        self.run_stdin(args, message.unwrap_or_default().as_bytes())
+            .map(drop)
     }
 
     pub fn delete_tag(&self, name: &str) -> GitResult<()> {
         safe_ref(name)?;
-        self.run(Args::new("tag").args(["--delete", name])).map(drop)
+        self.run(Args::new("tag").args(["--delete", name]))
+            .map(drop)
     }
 
     /// Pushes one tag to a remote.
     pub fn push_tag(&self, remote: &str, name: &str) -> GitResult<()> {
         safe_ref(remote)?;
         safe_ref(name)?;
-        self.run(Args::new("push").arg(remote).arg(format!("refs/tags/{name}")))
-            .map(drop)
+        self.run(
+            Args::new("push")
+                .arg(remote)
+                .arg(format!("refs/tags/{name}")),
+        )
+        .map(drop)
     }
 
     /// Deletes a tag on a remote.
     pub fn delete_remote_tag(&self, remote: &str, name: &str) -> GitResult<()> {
         safe_ref(remote)?;
         safe_ref(name)?;
-        self.run(Args::new("push").arg(remote).arg(format!(":refs/tags/{name}")))
-            .map(drop)
+        self.run(
+            Args::new("push")
+                .arg(remote)
+                .arg(format!(":refs/tags/{name}")),
+        )
+        .map(drop)
     }
 }

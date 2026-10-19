@@ -10,7 +10,9 @@ pub type Rgb = (u8, u8, u8);
 /// Monospaced system font so columns line up.
 pub fn monospace_font(size: f64) -> Font {
     Font(unsafe {
-        ShareId::from_ptr(msg_send![class!(NSFont), monospacedSystemFontOfSize: size weight: 0.0f64])
+        ShareId::from_ptr(
+            msg_send![class!(NSFont), monospacedSystemFontOfSize: size weight: 0.0f64],
+        )
     })
 }
 
@@ -40,4 +42,3 @@ pub fn ref_rgb(kind: RefKind) -> Rgb {
 pub fn color(rgb: Rgb) -> Color {
     Color::rgb(rgb.0, rgb.1, rgb.2)
 }
-

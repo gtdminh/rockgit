@@ -61,19 +61,30 @@ impl CommitHeader {
         *self.description_offset.borrow_mut() = Some(description_leading.clone());
         LayoutConstraint::activate(&[
             description_leading,
-            self.graph.leading.constraint_equal_to(&c.leading).offset(12.),
+            self.graph
+                .leading
+                .constraint_equal_to(&c.leading)
+                .offset(12.),
             self.graph.center_y.constraint_equal_to(&c.center_y),
             self.description.center_y.constraint_equal_to(&c.center_y),
-            self.date.trailing.constraint_equal_to(&self.author.leading).offset(-8.),
+            self.date
+                .trailing
+                .constraint_equal_to(&self.author.leading)
+                .offset(-8.),
             self.date.width.constraint_equal_to_constant(DATE_WIDTH),
             self.date.center_y.constraint_equal_to(&c.center_y),
-            self.author.trailing.constraint_equal_to(&self.commit.leading).offset(-8.),
+            self.author
+                .trailing
+                .constraint_equal_to(&self.commit.leading)
+                .offset(-8.),
             self.author.width.constraint_equal_to_constant(AUTHOR_WIDTH),
             self.author.center_y.constraint_equal_to(&c.center_y),
-            self.commit.trailing.constraint_equal_to(&c.trailing).offset(-12.),
+            self.commit
+                .trailing
+                .constraint_equal_to(&c.trailing)
+                .offset(-12.),
             self.commit.width.constraint_equal_to_constant(COMMIT_WIDTH),
             self.commit.center_y.constraint_equal_to(&c.center_y),
         ]);
     }
 }
-

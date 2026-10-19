@@ -1,12 +1,24 @@
 use std::path::PathBuf;
 
-use crate::app::model::{FileChange, LoadedRepo};
+use crate::app::model::{AppConfig, FileChange, LoadedRepo};
 
 #[derive(Clone, Debug)]
 pub enum AppAction {
+    OpenSettingsDialog,
+    SaveSettingsDialog,
+    CloseSettingsDialog,
+    UpdateConfig(AppConfig),
     SelectRepository(usize),
     SelectBranch(usize),
     ToggleBranchListNode(String),
+    ToggleWorkingTreeListNode(String),
+    SelectUncommittedChanges,
+    RevertWorkingTreeFile(String),
+    RevertAllWorkingTreeChanges,
+    CommitWorkingTree {
+        message: String,
+        push_after: bool,
+    },
     SelectCommit(usize),
     SelectOlderCommit,
     SelectNewerCommit,
@@ -22,6 +34,8 @@ pub enum AppAction {
     RepositoryLoaded(Box<LoadedRepo>),
     /// Result from the git service: loading failed.
     RepositoryLoadFailed(String),
+    /// Result from the git service: an operation succeeded and wants to update the status bar.
+    SetLastAction(String),
     /// Result from the git service: changed files of a commit.
     CommitFilesLoaded {
         index: usize,
@@ -48,4 +62,3 @@ impl GitOperation {
         }
     }
 }
-

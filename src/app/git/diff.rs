@@ -28,7 +28,12 @@ pub struct DiffOptions {
 
 impl Default for DiffOptions {
     fn default() -> Self {
-        Self { context: None, ignore_whitespace: false, detect_renames: true, paths: Vec::new() }
+        Self {
+            context: None,
+            ignore_whitespace: false,
+            detect_renames: true,
+            paths: Vec::new(),
+        }
     }
 }
 
@@ -76,7 +81,10 @@ pub struct FileDiff {
 impl FileDiff {
     /// The path to show for this file.
     pub fn path(&self) -> &str {
-        self.new_path.as_deref().or(self.old_path.as_deref()).unwrap_or("")
+        self.new_path
+            .as_deref()
+            .or(self.old_path.as_deref())
+            .unwrap_or("")
     }
 
     /// A standalone patch containing only hunk `index`; feed it to `apply_patch` to stage,
@@ -123,15 +131,26 @@ impl GitClient {
     }
 
     /// Files changed with added/deleted line counts.
-    pub fn changed_files(&self, target: &DiffTarget, o: &DiffOptions) -> GitResult<Vec<FileChange>> {
-        let statuses = self.run(self.diff_args(target, o, &["--name-status", "-z"])?)?.stdout_str();
-        let numstat = self.run(self.diff_args(target, o, &["--numstat", "-z"])?)?.stdout_str();
+    pub fn changed_files(
+        &self,
+        target: &DiffTarget,
+        o: &DiffOptions,
+    ) -> GitResult<Vec<FileChange>> {
+        let statuses = self
+            .run(self.diff_args(target, o, &["--name-status", "-z"])?)?
+            .stdout_str();
+        let numstat = self
+            .run(self.diff_args(target, o, &["--numstat", "-z"])?)?
+            .stdout_str();
         let counts = parse_numstat(&numstat);
 
         let mut files = Vec::new();
         let mut it = statuses.split('\0').filter(|s| !s.is_empty());
         while let Some(code) = it.next() {
-            let status = code.chars().next().map_or(ChangeKind::Unmodified, ChangeKind::from_code);
+            let status = code
+                .chars()
+                .next()
+                .map_or(ChangeKind::Unmodified, ChangeKind::from_code);
             let (path, old_path) = if matches!(status, ChangeKind::Renamed | ChangeKind::Copied) {
                 let old = it.next().unwrap_or_default().to_string();
                 (it.next().unwrap_or_default().to_string(), Some(old))
@@ -139,7 +158,13 @@ impl GitClient {
                 (it.next().unwrap_or_default().to_string(), None)
             };
             let (added, deleted) = counts.get(&path).copied().unwrap_or((None, None));
-            files.push(FileChange { path, old_path, status, added, deleted });
+            files.push(FileChange {
+                path,
+                old_path,
+                status,
+                added,
+                deleted,
+            });
         }
         Ok(files)
     }
@@ -159,7 +184,11 @@ impl GitClient {
         if rev != ":" {
             safe_ref(rev)?;
         }
-        let spec = if rev == ":" { format!(":{path}") } else { format!("{rev}:{path}") };
+        let spec = if rev == ":" {
+            format!(":{path}")
+        } else {
+            format!("{rev}:{path}")
+        };
         Ok(self.run(Args::new("show").arg(spec))?.stdout)
     }
 
@@ -175,7 +204,11 @@ impl GitClient {
     fn diff_args(&self, target: &DiffTarget, o: &DiffOptions, extra: &[&str]) -> GitResult<Args> {
         let mut args = Args::new("diff")
             .args(["--no-color", "--no-ext-diff"])
-            .arg(if o.detect_renames { "-M" } else { "--no-renames" })
+            .arg(if o.detect_renames {
+                "-M"
+            } else {
+                "--no-renames"
+            })
             .flag(o.ignore_whitespace, "-w")
             .kv("unified", o.context)
             .args(extra);
@@ -189,19 +222,21 @@ impl GitClient {
                     None => self.empty_tree()?,
                 };
                 args.arg(base).arg(id)
-            },
+            }
             DiffTarget::Between(a, b) => {
                 safe_ref(a)?;
                 safe_ref(b)?;
                 args.arg(a).arg(b)
-            },
+            }
         };
         Ok(args.paths(&o.paths))
     }
 
     fn empty_tree(&self) -> GitResult<String> {
         let args = Args::new("hash-object").args(["-t", "tree", "--stdin"]);
-        Ok(String::from_utf8_lossy(&self.run_stdin(args, b"")?.stdout).trim().to_string())
+        Ok(String::from_utf8_lossy(&self.run_stdin(args, b"")?.stdout)
+            .trim()
+            .to_string())
     }
 }
 
@@ -210,7 +245,9 @@ fn parse_numstat(raw: &str) -> HashMap<String, (Option<u32>, Option<u32>)> {
     let mut it = raw.split('\0').filter(|s| !s.is_empty()).peekable();
     while let Some(entry) = it.next() {
         let mut f = entry.splitn(3, '\t');
-        let (Some(a), Some(d), Some(path)) = (f.next(), f.next(), f.next()) else { continue };
+        let (Some(a), Some(d), Some(path)) = (f.next(), f.next(), f.next()) else {
+            continue;
+        };
         // Renames are emitted as `a\td\t\0old\0new`.
         let path = if path.is_empty() {
             it.next();
@@ -228,7 +265,12 @@ fn strip_marker(s: &str) -> Option<String> {
     if s == "/dev/null" {
         return None;
     }
-    Some(s.strip_prefix("a/").or_else(|| s.strip_prefix("b/")).unwrap_or(s).to_string())
+    Some(
+        s.strip_prefix("a/")
+            .or_else(|| s.strip_prefix("b/"))
+            .unwrap_or(s)
+            .to_string(),
+    )
 }
 
 /// Parses a unified diff produced by `git diff` / `git show`.
@@ -248,7 +290,9 @@ pub(super) fn parse_diff(raw: &str) -> Vec<FileDiff> {
             });
             continue;
         }
-        let Some(file) = files.last_mut() else { continue };
+        let Some(file) = files.last_mut() else {
+            continue;
+        };
 
         if file.hunks.is_empty() && !line.starts_with("@@") {
             file.header.push(line.to_string());
@@ -275,22 +319,39 @@ pub(super) fn parse_diff(raw: &str) -> Vec<FileDiff> {
             continue;
         }
 
-        let Some(hunk) = file.hunks.last_mut() else { continue };
+        let Some(hunk) = file.hunks.last_mut() else {
+            continue;
+        };
         let mut chars = line.chars();
         let marker = chars.next();
         let content = chars.as_str().to_string();
         let diff_line = match marker {
             Some('+') => {
-                let l = DiffLine { kind: DiffLineKind::Added, content, old_no: None, new_no: Some(new_no) };
+                let l = DiffLine {
+                    kind: DiffLineKind::Added,
+                    content,
+                    old_no: None,
+                    new_no: Some(new_no),
+                };
                 new_no += 1;
                 l
-            },
+            }
             Some('-') => {
-                let l = DiffLine { kind: DiffLineKind::Removed, content, old_no: Some(old_no), new_no: None };
+                let l = DiffLine {
+                    kind: DiffLineKind::Removed,
+                    content,
+                    old_no: Some(old_no),
+                    new_no: None,
+                };
                 old_no += 1;
                 l
+            }
+            Some('\\') => DiffLine {
+                kind: DiffLineKind::NoNewline,
+                content,
+                old_no: None,
+                new_no: None,
             },
-            Some('\\') => DiffLine { kind: DiffLineKind::NoNewline, content, old_no: None, new_no: None },
             _ => {
                 let l = DiffLine {
                     kind: DiffLineKind::Context,
@@ -301,7 +362,7 @@ pub(super) fn parse_diff(raw: &str) -> Vec<FileDiff> {
                 old_no += 1;
                 new_no += 1;
                 l
-            },
+            }
         };
         hunk.lines.push(diff_line);
     }
@@ -310,14 +371,22 @@ pub(super) fn parse_diff(raw: &str) -> Vec<FileDiff> {
 
 /// Splits `a/<old> b/<new>`; paths may contain spaces, so try the identical-name case first.
 fn split_diff_git(rest: &str) -> (Option<String>, Option<String>) {
-    if let Some(len) = rest.len().checked_sub(5).filter(|n| n % 2 == 0).map(|n| n / 2) {
+    if let Some(len) = rest
+        .len()
+        .checked_sub(5)
+        .filter(|n| n % 2 == 0)
+        .map(|n| n / 2)
+    {
         let (a, b) = (&rest[..2 + len], &rest[3 + len..]);
         if a.starts_with("a/") && b.starts_with("b/") && a[2..] == b[2..] {
             return (Some(a[2..].to_string()), Some(b[2..].to_string()));
         }
     }
     match rest.split_once(" b/") {
-        Some((a, b)) => (Some(a.strip_prefix("a/").unwrap_or(a).to_string()), Some(b.to_string())),
+        Some((a, b)) => (
+            Some(a.strip_prefix("a/").unwrap_or(a).to_string()),
+            Some(b.to_string()),
+        ),
         None => (None, None),
     }
 }

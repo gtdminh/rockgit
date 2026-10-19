@@ -43,12 +43,17 @@ fn isolated() -> GitOptions {
 fn init_repo(tmp: &Tmp, name: &str) -> GitClient {
     let repo = GitClient::init(
         tmp.path(name),
-        &InitOptions { initial_branch: Some("main".into()), ..Default::default() },
+        &InitOptions {
+            initial_branch: Some("main".into()),
+            ..Default::default()
+        },
         isolated(),
     )
     .unwrap();
-    repo.set_local_identity("Test User", "test@example.com").unwrap();
-    repo.config_set(ConfigScope::Local, "commit.gpgsign", "false").unwrap();
+    repo.set_local_identity("Test User", "test@example.com")
+        .unwrap();
+    repo.config_set(ConfigScope::Local, "commit.gpgsign", "false")
+        .unwrap();
     repo
 }
 
@@ -63,7 +68,11 @@ fn write(repo: &GitClient, path: &str, content: &str) {
 fn commit_file(repo: &GitClient, path: &str, content: &str, msg: &str) -> String {
     write(repo, path, content);
     repo.stage(&[path.to_string()]).unwrap();
-    repo.commit(&CommitOptions { message: msg.into(), ..Default::default() }).unwrap()
+    repo.commit(&CommitOptions {
+        message: msg.into(),
+        ..Default::default()
+    })
+    .unwrap()
 }
 
 fn paths(v: Vec<&StatusEntry>) -> Vec<&str> {
@@ -98,7 +107,10 @@ fn fake_commit_with_refs(id: &str, parents: &[&str], refs: Vec<RefDecoration>) -
 #[test]
 fn open_rejects_non_repository_and_finds_root_from_subdir() {
     let tmp = Tmp::new();
-    assert!(matches!(GitClient::open_with(&tmp.0, isolated()), Err(GitError::NotARepository(_))));
+    assert!(matches!(
+        GitClient::open_with(&tmp.0, isolated()),
+        Err(GitError::NotARepository(_))
+    ));
 
     let repo = init_repo(&tmp, "r");
     std::fs::create_dir_all(repo.root().join("a/b")).unwrap();
@@ -109,13 +121,26 @@ fn open_rejects_non_repository_and_finds_root_from_subdir() {
 
 #[test]
 fn git_version_is_reported() {
-    assert!(GitClient::git_version(&isolated()).unwrap().chars().next().unwrap().is_ascii_digit());
+    assert!(
+        GitClient::git_version(&isolated())
+            .unwrap()
+            .chars()
+            .next()
+            .unwrap()
+            .is_ascii_digit()
+    );
 }
 
 #[test]
 fn missing_git_binary_is_reported() {
-    let opts = GitOptions { git_binary: "definitely-not-git".into(), ..Default::default() };
-    assert!(matches!(GitClient::git_version(&opts), Err(GitError::GitNotFound(_))));
+    let opts = GitOptions {
+        git_binary: "definitely-not-git".into(),
+        ..Default::default()
+    };
+    assert!(matches!(
+        GitClient::git_version(&opts),
+        Err(GitError::GitNotFound(_))
+    ));
 }
 
 // ---- status / staging / commit ----------------------------------------------------------
@@ -135,7 +160,10 @@ fn unborn_repo_status_stage_unstage_and_first_commit() {
     assert!(!st.is_clean());
 
     repo.stage(&["a.txt".into()]).unwrap();
-    assert_eq!(paths(repo.status(&Default::default()).unwrap().staged().collect()), ["a.txt"]);
+    assert_eq!(
+        paths(repo.status(&Default::default()).unwrap().staged().collect()),
+        ["a.txt"]
+    );
 
     repo.unstage(&["a.txt".into()]).unwrap();
     let st = repo.status(&Default::default()).unwrap();
@@ -143,7 +171,12 @@ fn unborn_repo_status_stage_unstage_and_first_commit() {
     assert_eq!(st.untracked().count(), 1);
 
     repo.stage_all().unwrap();
-    let id = repo.commit(&CommitOptions { message: "first\n\nbody text".into(), ..Default::default() }).unwrap();
+    let id = repo
+        .commit(&CommitOptions {
+            message: "first\n\nbody text".into(),
+            ..Default::default()
+        })
+        .unwrap();
     assert_eq!(repo.head().unwrap().as_deref(), Some(id.as_str()));
     assert!(repo.status(&Default::default()).unwrap().is_clean());
 }
@@ -159,7 +192,10 @@ fn status_reports_staged_unstaged_rename_and_conflict_free_state() {
     write(&repo, "keep.txt", "changed\n");
     let st = repo.status(&Default::default()).unwrap();
 
-    let renamed: Vec<_> = st.staged().filter(|e| e.kind == EntryKind::Renamed).collect();
+    let renamed: Vec<_> = st
+        .staged()
+        .filter(|e| e.kind == EntryKind::Renamed)
+        .collect();
     assert_eq!(renamed.len(), 1);
     assert_eq!(renamed[0].path, "new.txt");
     assert_eq!(renamed[0].orig_path.as_deref(), Some("old.txt"));
@@ -176,7 +212,9 @@ fn commit_amend_reword_and_validation() {
     let err = repo.commit(&CommitOptions::default()).unwrap_err();
     assert!(matches!(err, GitError::InvalidInput(_)));
 
-    let reworded = repo.reword_last_commit("better message\n\nwith body").unwrap();
+    let reworded = repo
+        .reword_last_commit("better message\n\nwith body")
+        .unwrap();
     assert_ne!(first, reworded);
     let c = &repo.log(&Default::default()).unwrap()[0];
     assert_eq!(c.subject, "better message");
@@ -184,7 +222,11 @@ fn commit_amend_reword_and_validation() {
 
     write(&repo, "b", "2\n");
     repo.stage(&["b".into()]).unwrap();
-    repo.commit(&CommitOptions { amend: true, ..Default::default() }).unwrap();
+    repo.commit(&CommitOptions {
+        amend: true,
+        ..Default::default()
+    })
+    .unwrap();
     let log = repo.log(&Default::default()).unwrap();
     assert_eq!(log.len(), 1);
     assert_eq!(log[0].subject, "better message");
@@ -200,7 +242,10 @@ fn discard_clean_remove_and_restore() {
 
     write(&repo, "a.txt", "edited\n");
     repo.discard_changes(&["a.txt".into()]).unwrap();
-    assert_eq!(std::fs::read_to_string(repo.root().join("a.txt")).unwrap(), "orig\n");
+    assert_eq!(
+        std::fs::read_to_string(repo.root().join("a.txt")).unwrap(),
+        "orig\n"
+    );
 
     write(&repo, "a.txt", "edited again\n");
     write(&repo, "sub/b.txt", "edited\n");
@@ -210,21 +255,35 @@ fn discard_clean_remove_and_restore() {
     write(&repo, "junk.txt", "x");
     write(&repo, "dir/junk2.txt", "x");
     let preview = repo
-        .clean(&CleanOptions { directories: true, dry_run: true, ..Default::default() })
+        .clean(&CleanOptions {
+            directories: true,
+            dry_run: true,
+            ..Default::default()
+        })
         .unwrap();
     assert_eq!(preview.len(), 2);
     assert!(repo.root().join("junk.txt").exists());
-    repo.clean(&CleanOptions { directories: true, ..Default::default() }).unwrap();
+    repo.clean(&CleanOptions {
+        directories: true,
+        ..Default::default()
+    })
+    .unwrap();
     assert!(!repo.root().join("junk.txt").exists());
     assert!(!repo.root().join("dir").exists());
 
     write(&repo, "a.txt", "scratch\n");
     repo.restore_from("HEAD", &["a.txt".into()]).unwrap();
-    assert_eq!(std::fs::read_to_string(repo.root().join("a.txt")).unwrap(), "orig\n");
+    assert_eq!(
+        std::fs::read_to_string(repo.root().join("a.txt")).unwrap(),
+        "orig\n"
+    );
 
     repo.remove(&["a.txt".into()], false, false).unwrap();
     assert!(!repo.root().join("a.txt").exists());
-    assert_eq!(repo.status(&Default::default()).unwrap().staged().count(), 1);
+    assert_eq!(
+        repo.status(&Default::default()).unwrap().staged().count(),
+        1
+    );
 }
 
 #[test]
@@ -235,8 +294,17 @@ fn ignored_files_are_detected() {
     write(&repo, "x.log", "x");
     assert!(repo.is_ignored("x.log").unwrap());
     assert!(!repo.is_ignored("x.txt").unwrap());
-    let st = repo.status(&StatusOptions { include_ignored: true, ..Default::default() }).unwrap();
-    assert!(st.entries.iter().any(|e| e.kind == EntryKind::Ignored && e.path == "x.log"));
+    let st = repo
+        .status(&StatusOptions {
+            include_ignored: true,
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(
+        st.entries
+            .iter()
+            .any(|e| e.kind == EntryKind::Ignored && e.path == "x.log")
+    );
 }
 
 // ---- diff -------------------------------------------------------------------------------
@@ -257,9 +325,15 @@ fn diff_parses_hunks_and_stages_single_hunk() {
     let tmp = Tmp::new();
     let repo = init_repo(&tmp, "r");
     commit_file(&repo, "f.txt", &numbered(30, &[]), "init");
-    write(&repo, "f.txt", &numbered(30, &[(2, "EDIT TWO"), (28, "EDIT TWENTYEIGHT")]));
+    write(
+        &repo,
+        "f.txt",
+        &numbered(30, &[(2, "EDIT TWO"), (28, "EDIT TWENTYEIGHT")]),
+    );
 
-    let diffs = repo.diff(&DiffTarget::Unstaged, &Default::default()).unwrap();
+    let diffs = repo
+        .diff(&DiffTarget::Unstaged, &Default::default())
+        .unwrap();
     assert_eq!(diffs.len(), 1);
     assert_eq!(diffs[0].path(), "f.txt");
     assert_eq!(diffs[0].hunks.len(), 2);
@@ -272,18 +346,55 @@ fn diff_parses_hunks_and_stages_single_hunk() {
     assert_eq!(removed[0].old_no, Some(2));
 
     let patch = diffs[0].hunk_patch(0).unwrap();
-    repo.apply_patch(&patch, ApplyOptions { cached: true, ..Default::default() }).unwrap();
+    repo.apply_patch(
+        &patch,
+        ApplyOptions {
+            cached: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
     let staged = repo.diff(&DiffTarget::Staged, &Default::default()).unwrap();
-    let unstaged = repo.diff(&DiffTarget::Unstaged, &Default::default()).unwrap();
+    let unstaged = repo
+        .diff(&DiffTarget::Unstaged, &Default::default())
+        .unwrap();
     assert_eq!(staged[0].hunks.len(), 1);
     assert_eq!(unstaged[0].hunks.len(), 1);
-    assert!(staged[0].hunks[0].lines.iter().any(|l| l.content == "EDIT TWO"));
+    assert!(
+        staged[0].hunks[0]
+            .lines
+            .iter()
+            .any(|l| l.content == "EDIT TWO")
+    );
 
-    repo.apply_patch(&patch, ApplyOptions { cached: true, reverse: true, ..Default::default() }).unwrap();
-    assert!(repo.diff(&DiffTarget::Staged, &Default::default()).unwrap().is_empty());
+    repo.apply_patch(
+        &patch,
+        ApplyOptions {
+            cached: true,
+            reverse: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert!(
+        repo.diff(&DiffTarget::Staged, &Default::default())
+            .unwrap()
+            .is_empty()
+    );
 
-    let discard = repo.diff(&DiffTarget::Unstaged, &Default::default()).unwrap()[0].hunk_patch(0).unwrap();
-    repo.apply_patch(&discard, ApplyOptions { reverse: true, ..Default::default() }).unwrap();
+    let discard = repo
+        .diff(&DiffTarget::Unstaged, &Default::default())
+        .unwrap()[0]
+        .hunk_patch(0)
+        .unwrap();
+    repo.apply_patch(
+        &discard,
+        ApplyOptions {
+            reverse: true,
+            ..Default::default()
+        },
+    )
+    .unwrap();
     let content = std::fs::read_to_string(repo.root().join("f.txt")).unwrap();
     assert!(content.contains("line 2\n") && content.contains("EDIT TWENTYEIGHT"));
 }
@@ -299,7 +410,12 @@ fn diff_handles_paths_with_spaces_new_deleted_and_binary_files() {
     repo.stage_all().unwrap();
 
     let diffs = repo.diff(&DiffTarget::Staged, &Default::default()).unwrap();
-    let by = |p: &str| diffs.iter().find(|d| d.path() == p).unwrap_or_else(|| panic!("missing {p}"));
+    let by = |p: &str| {
+        diffs
+            .iter()
+            .find(|d| d.path() == p)
+            .unwrap_or_else(|| panic!("missing {p}"))
+    };
     let spaced = by("my file.txt");
     assert_eq!(spaced.old_path, None);
     assert_eq!(spaced.hunks[0].lines[0].content, "hello");
@@ -307,10 +423,18 @@ fn diff_handles_paths_with_spaces_new_deleted_and_binary_files() {
     assert_eq!(gone.new_path, None);
     assert!(by("bin.dat").binary);
 
-    let stats = repo.changed_files(&DiffTarget::Staged, &Default::default()).unwrap();
+    let stats = repo
+        .changed_files(&DiffTarget::Staged, &Default::default())
+        .unwrap();
     let spaced = stats.iter().find(|f| f.path == "my file.txt").unwrap();
-    assert_eq!((spaced.status, spaced.added, spaced.deleted), (ChangeKind::Added, Some(1), Some(0)));
-    assert_eq!(stats.iter().find(|f| f.path == "bin.dat").unwrap().added, None);
+    assert_eq!(
+        (spaced.status, spaced.added, spaced.deleted),
+        (ChangeKind::Added, Some(1), Some(0))
+    );
+    assert_eq!(
+        stats.iter().find(|f| f.path == "bin.dat").unwrap().added,
+        None
+    );
 }
 
 #[test]
@@ -323,9 +447,17 @@ fn commit_detail_shows_renames_and_root_commit_files() {
     assert_eq!(detail.files[0].status, ChangeKind::Added);
 
     repo.move_path("a.txt", "b.txt").unwrap();
-    let id = repo.commit(&CommitOptions { message: "rename".into(), ..Default::default() }).unwrap();
+    let id = repo
+        .commit(&CommitOptions {
+            message: "rename".into(),
+            ..Default::default()
+        })
+        .unwrap();
     let f = &repo.commit_detail(&id).unwrap().files[0];
-    assert_eq!((f.status, f.path.as_str(), f.old_path.as_deref()), (ChangeKind::Renamed, "b.txt", Some("a.txt")));
+    assert_eq!(
+        (f.status, f.path.as_str(), f.old_path.as_deref()),
+        (ChangeKind::Renamed, "b.txt", Some("a.txt"))
+    );
 
     assert_eq!(repo.file_at(&root, "a.txt").unwrap(), b"1\n2\n3\n4\n5\n");
     assert_eq!(repo.file_at(":", "b.txt").unwrap(), b"1\n2\n3\n4\n5\n");
@@ -345,20 +477,49 @@ fn log_filters_search_and_decorations() {
     let all = repo.log(&Default::default()).unwrap();
     assert_eq!(all.len(), 3);
     assert_eq!(all[0].subject, "gamma feature");
-    assert!(all[0].refs.iter().any(|r| r.name == "main" && r.kind == DecorationKind::LocalBranch && r.is_head));
-    assert!(all[2].refs.iter().any(|r| r.name == "v1" && r.kind == DecorationKind::Tag));
+    assert!(
+        all[0]
+            .refs
+            .iter()
+            .any(|r| r.name == "main" && r.kind == DecorationKind::LocalBranch && r.is_head)
+    );
+    assert!(
+        all[2]
+            .refs
+            .iter()
+            .any(|r| r.name == "v1" && r.kind == DecorationKind::Tag)
+    );
 
-    let feat = repo.log(&LogOptions { grep: Some("feature".into()), ..Default::default() }).unwrap();
+    let feat = repo
+        .log(&LogOptions {
+            grep: Some("feature".into()),
+            ..Default::default()
+        })
+        .unwrap();
     assert_eq!(feat.len(), 2);
-    let limited = repo.log(&LogOptions { max_count: Some(1), skip: 1, ..Default::default() }).unwrap();
+    let limited = repo
+        .log(&LogOptions {
+            max_count: Some(1),
+            skip: 1,
+            ..Default::default()
+        })
+        .unwrap();
     assert_eq!(limited[0].subject, "beta fix");
-    let by_path = repo.log(&LogOptions { paths: vec!["b".into()], ..Default::default() }).unwrap();
+    let by_path = repo
+        .log(&LogOptions {
+            paths: vec!["b".into()],
+            ..Default::default()
+        })
+        .unwrap();
     assert_eq!(by_path.len(), 1);
     assert_eq!(repo.file_history("a", None).unwrap().len(), 2);
     assert_eq!(repo.rev_parse("v1").unwrap(), a);
     assert_eq!(repo.ahead_behind("main", "v1").unwrap(), (2, 0));
     assert!(repo.is_ancestor("v1", "main").unwrap());
-    assert_eq!(repo.merge_base("v1", "main").unwrap().as_deref(), Some(a.as_str()));
+    assert_eq!(
+        repo.merge_base("v1", "main").unwrap().as_deref(),
+        Some(a.as_str())
+    );
 }
 
 #[test]
@@ -370,10 +531,21 @@ fn graph_for_real_merge_history() {
     commit_file(&repo, "f", "1", "feature work");
     repo.switch_branch("main", false).unwrap();
     commit_file(&repo, "m", "1", "main work");
-    repo.merge("feature", &MergeOptions { strategy: MergeStrategy::NoFastForward, ..Default::default() })
-        .unwrap();
+    repo.merge(
+        "feature",
+        &MergeOptions {
+            strategy: MergeStrategy::NoFastForward,
+            ..Default::default()
+        },
+    )
+    .unwrap();
 
-    let rows = repo.graph(&LogOptions { all: true, ..Default::default() }).unwrap();
+    let rows = repo
+        .graph(&LogOptions {
+            all: true,
+            ..Default::default()
+        })
+        .unwrap();
     assert_eq!(rows.len(), 4);
     let merge = &rows[0];
     assert!(merge.commit.is_merge());
@@ -386,7 +558,11 @@ fn graph_for_real_merge_history() {
 
 #[test]
 fn graph_layout_linear_history_uses_one_lane() {
-    let rows = build_graph(vec![fake_commit("c", &["b"]), fake_commit("b", &["a"]), fake_commit("a", &[])]);
+    let rows = build_graph(vec![
+        fake_commit("c", &["b"]),
+        fake_commit("b", &["a"]),
+        fake_commit("a", &[]),
+    ]);
     assert!(rows.iter().all(|r| r.lane == 0 && r.width == 1));
     assert!(rows[0].incoming.is_empty());
     assert_eq!(rows[1].incoming.len(), 1);
@@ -401,12 +577,21 @@ fn graph_layout_branch_and_merge() {
         fake_commit("F", &["A"]),
         fake_commit("A", &[]),
     ]);
-    let shape = |r: &GraphRow| -> Vec<(usize, usize)> { r.outgoing.iter().map(|e| (e.from, e.to)).collect() };
+    let shape = |r: &GraphRow| -> Vec<(usize, usize)> {
+        r.outgoing.iter().map(|e| (e.from, e.to)).collect()
+    };
 
     assert_eq!(rows[0].lane, 0);
     assert_eq!(shape(&rows[0]), [(0, 0), (0, 1)]);
     assert_eq!(rows[1].lane, 0);
-    assert_eq!(rows[1].passthrough.iter().map(|e| (e.from, e.to)).collect::<Vec<_>>(), [(1, 1)]);
+    assert_eq!(
+        rows[1]
+            .passthrough
+            .iter()
+            .map(|e| (e.from, e.to))
+            .collect::<Vec<_>>(),
+        [(1, 1)]
+    );
     assert_eq!(rows[2].lane, 1);
     assert_eq!(shape(&rows[2]), [(1, 0)]);
     assert_eq!(rows[3].lane, 0);
@@ -475,7 +660,12 @@ fn branch_lifecycle() {
     repo.create_branch("topic", None, true).unwrap();
     assert_eq!(repo.current_branch().unwrap().as_deref(), Some("topic"));
 
-    let names: Vec<_> = repo.branches().unwrap().into_iter().map(|b| (b.name, b.is_current)).collect();
+    let names: Vec<_> = repo
+        .branches()
+        .unwrap()
+        .into_iter()
+        .map(|b| (b.name, b.is_current))
+        .collect();
     assert!(names.contains(&("topic".to_string(), true)));
     assert!(names.contains(&("dev".to_string(), false)));
 
@@ -495,7 +685,11 @@ fn branch_lifecycle() {
     assert!(repo.delete_branch("unmerged", false).is_err());
     repo.delete_branch("unmerged", true).unwrap();
     repo.delete_branch("develop", false).unwrap();
-    assert!(repo.branches_containing("main").unwrap().contains(&"main".to_string()));
+    assert!(
+        repo.branches_containing("main")
+            .unwrap()
+            .contains(&"main".to_string())
+    );
 }
 
 #[test]
@@ -510,7 +704,10 @@ fn switching_with_dirty_tree_fails_unless_discarding() {
     write(&repo, "a", "dirty\n");
     assert!(repo.switch_branch("other", false).is_err());
     repo.switch_branch("other", true).unwrap();
-    assert_eq!(std::fs::read_to_string(repo.root().join("a")).unwrap(), "2\n");
+    assert_eq!(
+        std::fs::read_to_string(repo.root().join("a")).unwrap(),
+        "2\n"
+    );
 }
 
 #[test]
@@ -519,7 +716,8 @@ fn tags_lightweight_annotated_and_delete() {
     let repo = init_repo(&tmp, "r");
     let id = commit_file(&repo, "a", "1", "one");
     repo.create_tag("light", None, None, false).unwrap();
-    repo.create_tag("rel-1.0", None, Some("Release 1.0\n\nnotes"), false).unwrap();
+    repo.create_tag("rel-1.0", None, Some("Release 1.0\n\nnotes"), false)
+        .unwrap();
     assert!(repo.create_tag("light", None, None, false).is_err());
     repo.create_tag("light", None, None, true).unwrap();
 
@@ -553,17 +751,32 @@ fn merge_conflict_resolution_and_continue() {
     let repo = diverge_with_conflict(&tmp);
 
     let outcome = repo.merge("other", &Default::default()).unwrap();
-    let OpOutcome::Conflict { files, .. } = outcome else { panic!("expected conflict") };
+    let OpOutcome::Conflict { files, .. } = outcome else {
+        panic!("expected conflict")
+    };
     assert_eq!(files, ["f.txt"]);
     assert_eq!(repo.repo_state(), RepoState::Merging);
-    assert_eq!(repo.status(&Default::default()).unwrap().conflicted().count(), 1);
+    assert_eq!(
+        repo.status(&Default::default())
+            .unwrap()
+            .conflicted()
+            .count(),
+        1
+    );
     assert_eq!(repo.conflict_stage("f.txt", 2).unwrap().unwrap(), b"ours\n");
-    assert_eq!(repo.conflict_stage("f.txt", 3).unwrap().unwrap(), b"theirs\n");
+    assert_eq!(
+        repo.conflict_stage("f.txt", 3).unwrap().unwrap(),
+        b"theirs\n"
+    );
 
-    repo.resolve_conflict("f.txt", ConflictSide::Theirs).unwrap();
+    repo.resolve_conflict("f.txt", ConflictSide::Theirs)
+        .unwrap();
     assert!(repo.merge_continue().unwrap().is_success());
     assert_eq!(repo.repo_state(), RepoState::Clean);
-    assert_eq!(std::fs::read_to_string(repo.root().join("f.txt")).unwrap(), "theirs\n");
+    assert_eq!(
+        std::fs::read_to_string(repo.root().join("f.txt")).unwrap(),
+        "theirs\n"
+    );
     assert!(repo.log(&Default::default()).unwrap()[0].is_merge());
 }
 
@@ -571,10 +784,18 @@ fn merge_conflict_resolution_and_continue() {
 fn merge_abort_restores_state() {
     let tmp = Tmp::new();
     let repo = diverge_with_conflict(&tmp);
-    assert!(!repo.merge("other", &Default::default()).unwrap().is_success());
+    assert!(
+        !repo
+            .merge("other", &Default::default())
+            .unwrap()
+            .is_success()
+    );
     repo.merge_abort().unwrap();
     assert_eq!(repo.repo_state(), RepoState::Clean);
-    assert_eq!(std::fs::read_to_string(repo.root().join("f.txt")).unwrap(), "ours\n");
+    assert_eq!(
+        std::fs::read_to_string(repo.root().join("f.txt")).unwrap(),
+        "ours\n"
+    );
 }
 
 #[test]
@@ -587,11 +808,28 @@ fn fast_forward_only_and_squash_merge() {
     commit_file(&repo, "c", "3", "feat 2");
     repo.switch_branch("main", false).unwrap();
 
-    repo.merge("feat", &MergeOptions { strategy: MergeStrategy::Squash, ..Default::default() }).unwrap();
-    assert_eq!(repo.status(&Default::default()).unwrap().staged().count(), 2);
+    repo.merge(
+        "feat",
+        &MergeOptions {
+            strategy: MergeStrategy::Squash,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        repo.status(&Default::default()).unwrap().staged().count(),
+        2
+    );
     repo.reset("HEAD", ResetMode::Hard).unwrap();
 
-    repo.merge("feat", &MergeOptions { strategy: MergeStrategy::FastForwardOnly, ..Default::default() }).unwrap();
+    repo.merge(
+        "feat",
+        &MergeOptions {
+            strategy: MergeStrategy::FastForwardOnly,
+            ..Default::default()
+        },
+    )
+    .unwrap();
     assert_eq!(repo.log(&Default::default()).unwrap().len(), 3);
 }
 
@@ -601,14 +839,24 @@ fn rebase_with_conflict_then_abort_and_continue() {
     let repo = diverge_with_conflict(&tmp);
     repo.switch_branch("other", false).unwrap();
 
-    let outcome = repo.rebase(&RebaseOptions { upstream: "main".into(), ..Default::default() }).unwrap();
+    let outcome = repo
+        .rebase(&RebaseOptions {
+            upstream: "main".into(),
+            ..Default::default()
+        })
+        .unwrap();
     assert!(matches!(outcome, OpOutcome::Conflict { .. }));
     assert_eq!(repo.repo_state(), RepoState::Rebasing);
     repo.rebase_abort().unwrap();
     assert_eq!(repo.repo_state(), RepoState::Clean);
 
-    repo.rebase(&RebaseOptions { upstream: "main".into(), ..Default::default() }).unwrap();
-    repo.resolve_conflict("f.txt", ConflictSide::Theirs).unwrap();
+    repo.rebase(&RebaseOptions {
+        upstream: "main".into(),
+        ..Default::default()
+    })
+    .unwrap();
+    repo.resolve_conflict("f.txt", ConflictSide::Theirs)
+        .unwrap();
     assert!(repo.rebase_continue().unwrap().is_success());
     assert_eq!(repo.repo_state(), RepoState::Clean);
     assert_eq!(repo.log(&Default::default()).unwrap().len(), 3);
@@ -627,14 +875,29 @@ fn interactive_rebase_squashes_reorders_and_drops() {
     let mut todo = repo.rebase_todo("HEAD~4").unwrap();
     assert_eq!(todo.len(), 4);
     let (fix, drop_me) = (todo[2].clone(), todo[3].clone());
-    todo[2] = RebaseStep { action: RebaseAction::Fixup, commit: fix.commit.clone() };
-    todo[3] = RebaseStep { action: RebaseAction::Drop, commit: drop_me.commit };
+    todo[2] = RebaseStep {
+        action: RebaseAction::Fixup,
+        commit: fix.commit.clone(),
+    };
+    todo[3] = RebaseStep {
+        action: RebaseAction::Drop,
+        commit: drop_me.commit,
+    };
     // Move the fixup right after `add a` so it melds into it.
     let moved = todo.remove(2);
     todo.insert(1, moved);
 
-    assert!(repo.rebase_interactive("HEAD~4", &todo).unwrap().is_success());
-    let subjects: Vec<_> = repo.log(&Default::default()).unwrap().into_iter().map(|c| c.subject).collect();
+    assert!(
+        repo.rebase_interactive("HEAD~4", &todo)
+            .unwrap()
+            .is_success()
+    );
+    let subjects: Vec<_> = repo
+        .log(&Default::default())
+        .unwrap()
+        .into_iter()
+        .map(|c| c.subject)
+        .collect();
     assert_eq!(subjects, ["add b", "add a", "base"]);
     assert!(!repo.root().join("d").exists());
     assert!(repo.root().join("c").exists());
@@ -649,11 +912,19 @@ fn cherry_pick_and_revert() {
     let picked = commit_file(&repo, "s", "side", "side commit");
     repo.switch_branch("main", false).unwrap();
 
-    assert!(repo.cherry_pick(&[picked], false, None).unwrap().is_success());
+    assert!(
+        repo.cherry_pick(&[picked], false, None)
+            .unwrap()
+            .is_success()
+    );
     assert!(repo.root().join("s").exists());
     assert!(repo.cherry_pick(&[], false, None).is_err());
 
-    assert!(repo.revert(&["HEAD".into()], false, None).unwrap().is_success());
+    assert!(
+        repo.revert(&["HEAD".into()], false, None)
+            .unwrap()
+            .is_success()
+    );
     assert!(!repo.root().join("s").exists());
     let log = repo.log(&Default::default()).unwrap();
     assert!(log[0].subject.starts_with("Revert"));
@@ -680,11 +951,23 @@ fn reset_modes_and_undo_last_commit() {
 
     repo.undo_last_commit().unwrap();
     assert_eq!(repo.head().unwrap().as_deref(), Some(first.as_str()));
-    assert_eq!(paths(repo.status(&Default::default()).unwrap().staged().collect()), ["b"]);
+    assert_eq!(
+        paths(repo.status(&Default::default()).unwrap().staged().collect()),
+        ["b"]
+    );
 
     repo.reset("HEAD", ResetMode::Mixed).unwrap();
-    assert_eq!(repo.status(&Default::default()).unwrap().staged().count(), 0);
-    assert_eq!(repo.status(&Default::default()).unwrap().untracked().count(), 1);
+    assert_eq!(
+        repo.status(&Default::default()).unwrap().staged().count(),
+        0
+    );
+    assert_eq!(
+        repo.status(&Default::default())
+            .unwrap()
+            .untracked()
+            .count(),
+        1
+    );
 
     repo.stage_all().unwrap();
     repo.reset("HEAD", ResetMode::Hard).unwrap();
@@ -703,27 +986,42 @@ fn stash_push_list_apply_pop_drop() {
 
     write(&repo, "a", "changed\n");
     write(&repo, "new.txt", "untracked\n");
-    assert!(repo
-        .stash_push(&StashOptions { message: Some("wip".into()), include_untracked: true, ..Default::default() })
-        .unwrap());
+    assert!(
+        repo.stash_push(&StashOptions {
+            message: Some("wip".into()),
+            include_untracked: true,
+            ..Default::default()
+        })
+        .unwrap()
+    );
     assert!(repo.status(&Default::default()).unwrap().is_clean());
 
     let stashes = repo.stash_list().unwrap();
     assert_eq!(stashes.len(), 1);
     assert!(stashes[0].message.contains("wip"));
     let files = repo
-        .changed_files(&DiffTarget::Commit(GitClient::stash_rev(0)), &Default::default())
+        .changed_files(
+            &DiffTarget::Commit(GitClient::stash_rev(0)),
+            &Default::default(),
+        )
         .unwrap();
     assert_eq!(files.len(), 1);
 
     assert!(repo.stash_apply(0, false).unwrap().is_success());
     assert_eq!(repo.stash_list().unwrap().len(), 1);
     repo.reset("HEAD", ResetMode::Hard).unwrap();
-    repo.clean(&CleanOptions { directories: true, ..Default::default() }).unwrap();
+    repo.clean(&CleanOptions {
+        directories: true,
+        ..Default::default()
+    })
+    .unwrap();
 
     assert!(repo.stash_pop(0, false).unwrap().is_success());
     assert!(repo.stash_list().unwrap().is_empty());
-    assert_eq!(std::fs::read_to_string(repo.root().join("a")).unwrap(), "changed\n");
+    assert_eq!(
+        std::fs::read_to_string(repo.root().join("a")).unwrap(),
+        "changed\n"
+    );
 
     repo.stash_push(&Default::default()).unwrap();
     repo.stash_drop(0).unwrap();
@@ -736,7 +1034,10 @@ fn bare_remote(tmp: &Tmp, name: &str) -> PathBuf {
     let path = tmp.path(name);
     GitClient::init(
         &path,
-        &InitOptions { bare: true, initial_branch: Some("main".into()) },
+        &InitOptions {
+            bare: true,
+            initial_branch: Some("main".into()),
+        },
         isolated(),
     )
     .unwrap();
@@ -744,9 +1045,17 @@ fn bare_remote(tmp: &Tmp, name: &str) -> PathBuf {
 }
 
 fn clone_of(remote: &Path, dest: PathBuf) -> GitClient {
-    let repo = GitClient::clone_repo(remote.to_str().unwrap(), dest, &CloneOptions::default(), isolated()).unwrap();
-    repo.set_local_identity("Other Dev", "other@example.com").unwrap();
-    repo.config_set(ConfigScope::Local, "commit.gpgsign", "false").unwrap();
+    let repo = GitClient::clone_repo(
+        remote.to_str().unwrap(),
+        dest,
+        &CloneOptions::default(),
+        isolated(),
+    )
+    .unwrap();
+    repo.set_local_identity("Other Dev", "other@example.com")
+        .unwrap();
+    repo.config_set(ConfigScope::Local, "commit.gpgsign", "false")
+        .unwrap();
     repo
 }
 
@@ -755,7 +1064,9 @@ fn push_fetch_pull_between_clones() {
     let tmp = Tmp::new();
     let remote = bare_remote(&tmp, "origin.git");
     let alice = init_repo(&tmp, "alice");
-    alice.add_remote("origin", remote.to_str().unwrap()).unwrap();
+    alice
+        .add_remote("origin", remote.to_str().unwrap())
+        .unwrap();
     commit_file(&alice, "a", "1", "first");
     alice
         .push(&PushOptions {
@@ -765,7 +1076,14 @@ fn push_fetch_pull_between_clones() {
             ..Default::default()
         })
         .unwrap();
-    assert_eq!(alice.status(&Default::default()).unwrap().upstream.as_deref(), Some("origin/main"));
+    assert_eq!(
+        alice
+            .status(&Default::default())
+            .unwrap()
+            .upstream
+            .as_deref(),
+        Some("origin/main")
+    );
 
     let bob = clone_of(&remote, tmp.path("bob"));
     assert_eq!(bob.log(&Default::default()).unwrap().len(), 1);
@@ -773,13 +1091,30 @@ fn push_fetch_pull_between_clones() {
     commit_file(&alice, "a", "2", "second");
     alice.push(&PushOptions::default()).unwrap();
 
-    bob.fetch(&FetchOptions { all: true, prune: true, ..Default::default() }).unwrap();
+    bob.fetch(&FetchOptions {
+        all: true,
+        prune: true,
+        ..Default::default()
+    })
+    .unwrap();
     let st = bob.status(&Default::default()).unwrap();
     assert_eq!((st.ahead, st.behind), (0, 1));
-    let b = bob.branches().unwrap().into_iter().find(|b| b.name == "main").unwrap();
+    let b = bob
+        .branches()
+        .unwrap()
+        .into_iter()
+        .find(|b| b.name == "main")
+        .unwrap();
     assert_eq!((b.ahead, b.behind), (0, 1));
 
-    assert!(bob.pull(&PullOptions { strategy: PullStrategy::FastForwardOnly, ..Default::default() }).unwrap().is_success());
+    assert!(
+        bob.pull(&PullOptions {
+            strategy: PullStrategy::FastForwardOnly,
+            ..Default::default()
+        })
+        .unwrap()
+        .is_success()
+    );
     assert_eq!(bob.log(&Default::default()).unwrap().len(), 2);
 
     let remotes = bob.remotes().unwrap();
@@ -795,7 +1130,9 @@ fn rejected_push_pull_rebase_and_force_with_lease() {
     let tmp = Tmp::new();
     let remote = bare_remote(&tmp, "origin.git");
     let alice = init_repo(&tmp, "alice");
-    alice.add_remote("origin", remote.to_str().unwrap()).unwrap();
+    alice
+        .add_remote("origin", remote.to_str().unwrap())
+        .unwrap();
     commit_file(&alice, "a", "1\n", "first");
     let push = PushOptions {
         remote: Some("origin".into()),
@@ -811,14 +1148,28 @@ fn rejected_push_pull_rebase_and_force_with_lease() {
     commit_file(&bob, "bob.txt", "B\n", "bob work");
 
     assert!(bob.push(&PushOptions::default()).is_err());
-    assert!(bob.pull(&PullOptions { strategy: PullStrategy::Rebase, ..Default::default() }).unwrap().is_success());
+    assert!(
+        bob.pull(&PullOptions {
+            strategy: PullStrategy::Rebase,
+            ..Default::default()
+        })
+        .unwrap()
+        .is_success()
+    );
     bob.push(&PushOptions::default()).unwrap();
 
     // Alice's tracking info is stale, so a lease-protected force push must be refused.
     commit_file(&alice, "alice2.txt", "A2\n", "alice rewrite");
     alice.reset("HEAD~1", ResetMode::Hard).unwrap();
     commit_file(&alice, "alice3.txt", "A3\n", "diverged");
-    assert!(alice.push(&PushOptions { force_with_lease: true, ..Default::default() }).is_err());
+    assert!(
+        alice
+            .push(&PushOptions {
+                force_with_lease: true,
+                ..Default::default()
+            })
+            .is_err()
+    );
 }
 
 #[test]
@@ -826,10 +1177,17 @@ fn pull_with_divergence_reports_merge_conflict() {
     let tmp = Tmp::new();
     let remote = bare_remote(&tmp, "origin.git");
     let alice = init_repo(&tmp, "alice");
-    alice.add_remote("origin", remote.to_str().unwrap()).unwrap();
+    alice
+        .add_remote("origin", remote.to_str().unwrap())
+        .unwrap();
     commit_file(&alice, "f", "base\n", "base");
     alice
-        .push(&PushOptions { remote: Some("origin".into()), refspec: Some("main".into()), set_upstream: true, ..Default::default() })
+        .push(&PushOptions {
+            remote: Some("origin".into()),
+            refspec: Some("main".into()),
+            set_upstream: true,
+            ..Default::default()
+        })
         .unwrap();
     let bob = clone_of(&remote, tmp.path("bob"));
 
@@ -837,7 +1195,12 @@ fn pull_with_divergence_reports_merge_conflict() {
     alice.push(&PushOptions::default()).unwrap();
     commit_file(&bob, "f", "bob\n", "bob");
 
-    let outcome = bob.pull(&PullOptions { strategy: PullStrategy::Merge, ..Default::default() }).unwrap();
+    let outcome = bob
+        .pull(&PullOptions {
+            strategy: PullStrategy::Merge,
+            ..Default::default()
+        })
+        .unwrap();
     assert!(matches!(outcome, OpOutcome::Conflict { ref files, .. } if files == &["f"]));
     bob.merge_abort().unwrap();
 }
@@ -850,12 +1213,14 @@ fn remote_management_and_branch_tracking() {
     commit_file(&repo, "a", "1", "one");
     repo.add_remote("origin", remote.to_str().unwrap()).unwrap();
     repo.rename_remote("origin", "up").unwrap();
-    repo.set_remote_url("up", "https://example.com/team/repo.git", true).unwrap();
+    repo.set_remote_url("up", "https://example.com/team/repo.git", true)
+        .unwrap();
     let r = &repo.remotes().unwrap()[0];
     assert_eq!(r.name, "up");
     assert_eq!(r.push_url, "https://example.com/team/repo.git");
     assert_eq!(r.fetch_url, remote.to_str().unwrap());
-    repo.set_remote_url("up", remote.to_str().unwrap(), true).unwrap();
+    repo.set_remote_url("up", remote.to_str().unwrap(), true)
+        .unwrap();
 
     repo.create_branch("topic", None, true).unwrap();
     repo.push(&PushOptions {
@@ -865,8 +1230,18 @@ fn remote_management_and_branch_tracking() {
         ..Default::default()
     })
     .unwrap();
-    assert!(repo.branches().unwrap().iter().any(|b| b.name == "topic" && b.upstream.as_deref() == Some("up/topic")));
-    assert!(repo.branches().unwrap().iter().any(|b| b.name == "up/topic" && b.is_remote));
+    assert!(
+        repo.branches()
+            .unwrap()
+            .iter()
+            .any(|b| b.name == "topic" && b.upstream.as_deref() == Some("up/topic"))
+    );
+    assert!(
+        repo.branches()
+            .unwrap()
+            .iter()
+            .any(|b| b.name == "up/topic" && b.is_remote)
+    );
 
     repo.unset_upstream("topic").unwrap();
     repo.set_upstream("topic", "up/topic").unwrap();
@@ -877,14 +1252,37 @@ fn remote_management_and_branch_tracking() {
 
     repo.switch_branch("main", false).unwrap();
     repo.delete_remote_branch("up", "topic").unwrap();
-    repo.fetch(&FetchOptions { remote: Some("up".into()), prune: true, ..Default::default() }).unwrap();
-    assert!(!repo.branches().unwrap().iter().any(|b| b.name == "up/topic"));
+    repo.fetch(&FetchOptions {
+        remote: Some("up".into()),
+        prune: true,
+        ..Default::default()
+    })
+    .unwrap();
+    assert!(
+        !repo
+            .branches()
+            .unwrap()
+            .iter()
+            .any(|b| b.name == "up/topic")
+    );
 
-    repo.create_tag("rel", None, Some("release"), false).unwrap();
+    repo.create_tag("rel", None, Some("release"), false)
+        .unwrap();
     repo.push_tag("up", "rel").unwrap();
-    assert!(repo.ls_remote("up").unwrap().iter().any(|r| r.name == "refs/tags/rel"));
+    assert!(
+        repo.ls_remote("up")
+            .unwrap()
+            .iter()
+            .any(|r| r.name == "refs/tags/rel")
+    );
     repo.delete_remote_tag("up", "rel").unwrap();
-    assert!(!repo.ls_remote("up").unwrap().iter().any(|r| r.name == "refs/tags/rel"));
+    assert!(
+        !repo
+            .ls_remote("up")
+            .unwrap()
+            .iter()
+            .any(|r| r.name == "refs/tags/rel")
+    );
     repo.remove_remote("up").unwrap();
     assert!(repo.remotes().unwrap().is_empty());
 }
@@ -902,16 +1300,37 @@ fn clone_options_branch_depth_and_bare() {
     let shallow = GitClient::clone_repo(
         &url,
         tmp.path("shallow"),
-        &CloneOptions { branch: Some("dev".into()), depth: Some(1), ..Default::default() },
+        &CloneOptions {
+            branch: Some("dev".into()),
+            depth: Some(1),
+            ..Default::default()
+        },
         isolated(),
     )
     .unwrap();
     assert_eq!(shallow.current_branch().unwrap().as_deref(), Some("dev"));
     assert_eq!(shallow.log(&Default::default()).unwrap().len(), 1);
 
-    let bare = GitClient::clone_repo(&url, tmp.path("bare.git"), &CloneOptions { bare: true, ..Default::default() }, isolated()).unwrap();
+    let bare = GitClient::clone_repo(
+        &url,
+        tmp.path("bare.git"),
+        &CloneOptions {
+            bare: true,
+            ..Default::default()
+        },
+        isolated(),
+    )
+    .unwrap();
     assert!(bare.is_bare());
-    assert!(bare.log(&LogOptions { all: true, ..Default::default() }).unwrap().len() >= 3);
+    assert!(
+        bare.log(&LogOptions {
+            all: true,
+            ..Default::default()
+        })
+        .unwrap()
+        .len()
+            >= 3
+    );
 }
 
 // ---- misc -------------------------------------------------------------------------------
@@ -928,7 +1347,14 @@ fn blame_reports_author_per_line() {
     assert_eq!(lines[0].summary, "first");
     assert_eq!(lines[1].summary, "first");
     assert_eq!(lines[2].commit, second);
-    assert_eq!((lines[2].line, lines[2].content.as_str(), lines[2].author.as_str()), (3, "three", "Test User"));
+    assert_eq!(
+        (
+            lines[2].line,
+            lines[2].content.as_str(),
+            lines[2].author.as_str()
+        ),
+        (3, "three", "Test User")
+    );
 }
 
 #[test]
@@ -952,11 +1378,18 @@ fn config_identity_roundtrip() {
     let tmp = Tmp::new();
     let repo = init_repo(&tmp, "r");
     assert_eq!(repo.config_get("custom.missing").unwrap(), None);
-    repo.config_set(ConfigScope::Local, "custom.key", "value with spaces").unwrap();
-    assert_eq!(repo.config_get("custom.key").unwrap().as_deref(), Some("value with spaces"));
+    repo.config_set(ConfigScope::Local, "custom.key", "value with spaces")
+        .unwrap();
+    assert_eq!(
+        repo.config_get("custom.key").unwrap().as_deref(),
+        Some("value with spaces")
+    );
     repo.config_unset(ConfigScope::Local, "custom.key").unwrap();
     assert_eq!(repo.config_get("custom.key").unwrap(), None);
-    assert_eq!(repo.user_identity().unwrap(), (Some("Test User".into()), Some("test@example.com".into())));
+    assert_eq!(
+        repo.user_identity().unwrap(),
+        (Some("Test User".into()), Some("test@example.com".into()))
+    );
     assert!(repo.set_local_identity("", "x").is_err());
 }
 
@@ -970,9 +1403,15 @@ fn worktrees_add_list_remove() {
 
     let list = repo.worktrees().unwrap();
     assert_eq!(list.len(), 2);
-    assert!(list.iter().any(|w| w.branch.as_deref() == Some("wt-branch")));
+    assert!(
+        list.iter()
+            .any(|w| w.branch.as_deref() == Some("wt-branch"))
+    );
     let linked = GitClient::open_with(&wt, isolated()).unwrap();
-    assert_eq!(linked.current_branch().unwrap().as_deref(), Some("wt-branch"));
+    assert_eq!(
+        linked.current_branch().unwrap().as_deref(),
+        Some("wt-branch")
+    );
 
     repo.remove_worktree(&wt, false).unwrap();
     assert_eq!(repo.worktrees().unwrap().len(), 1);
@@ -985,10 +1424,16 @@ fn submodules_list_and_update() {
     commit_file(&lib, "lib.txt", "lib\n", "lib");
 
     let app = init_repo(&tmp, "app");
-    app.config_set(ConfigScope::Local, "protocol.file.allow", "always").unwrap();
+    app.config_set(ConfigScope::Local, "protocol.file.allow", "always")
+        .unwrap();
     let url = lib.root().to_str().unwrap().to_string();
-    app.run(super::args::Args::new("submodule").args(["add", "--", &url, "vendor/lib"])).unwrap();
-    app.commit(&CommitOptions { message: "add submodule".into(), ..Default::default() }).unwrap();
+    app.run(super::args::Args::new("submodule").args(["add", "--", &url, "vendor/lib"]))
+        .unwrap();
+    app.commit(&CommitOptions {
+        message: "add submodule".into(),
+        ..Default::default()
+    })
+    .unwrap();
 
     let subs = app.submodules().unwrap();
     assert_eq!(subs.len(), 1);
@@ -1006,18 +1451,47 @@ fn option_like_input_is_rejected_before_reaching_git() {
     commit_file(&repo, "a", "1", "one");
 
     for bad in ["--upload-pack=touch /tmp/pwned", "-D", ""] {
-        assert!(matches!(repo.create_branch(bad, None, false), Err(GitError::InvalidInput(_))), "{bad}");
-        assert!(matches!(repo.switch_branch(bad, false), Err(GitError::InvalidInput(_))), "{bad}");
-        assert!(matches!(repo.add_remote("x", bad), Err(GitError::InvalidInput(_))), "{bad}");
-        assert!(matches!(repo.ls_remote(bad), Err(GitError::InvalidInput(_))), "{bad}");
-        assert!(matches!(repo.rev_parse(bad), Err(GitError::InvalidInput(_))), "{bad}");
+        assert!(
+            matches!(
+                repo.create_branch(bad, None, false),
+                Err(GitError::InvalidInput(_))
+            ),
+            "{bad}"
+        );
+        assert!(
+            matches!(
+                repo.switch_branch(bad, false),
+                Err(GitError::InvalidInput(_))
+            ),
+            "{bad}"
+        );
+        assert!(
+            matches!(repo.add_remote("x", bad), Err(GitError::InvalidInput(_))),
+            "{bad}"
+        );
+        assert!(
+            matches!(repo.ls_remote(bad), Err(GitError::InvalidInput(_))),
+            "{bad}"
+        );
+        assert!(
+            matches!(repo.rev_parse(bad), Err(GitError::InvalidInput(_))),
+            "{bad}"
+        );
         assert!(matches!(
-            repo.log(&LogOptions { revs: vec![bad.into()], ..Default::default() }),
+            repo.log(&LogOptions {
+                revs: vec![bad.into()],
+                ..Default::default()
+            }),
             Err(GitError::InvalidInput(_))
         ));
     }
     assert!(matches!(
-        GitClient::clone_repo("--upload-pack=x", tmp.path("c"), &Default::default(), isolated()),
+        GitClient::clone_repo(
+            "--upload-pack=x",
+            tmp.path("c"),
+            &Default::default(),
+            isolated()
+        ),
         Err(GitError::InvalidInput(_))
     ));
     assert!(matches!(repo.stage(&[]), Err(GitError::InvalidInput(_))));
@@ -1029,14 +1503,22 @@ fn paths_starting_with_dash_are_treated_as_paths() {
     let repo = init_repo(&tmp, "r");
     write(&repo, "-rf", "x");
     repo.stage(&["-rf".into()]).unwrap();
-    assert_eq!(paths(repo.status(&Default::default()).unwrap().staged().collect()), ["-rf"]);
+    assert_eq!(
+        paths(repo.status(&Default::default()).unwrap().staged().collect()),
+        ["-rf"]
+    );
 }
 
 #[test]
 fn unicode_and_special_filenames_round_trip() {
     let tmp = Tmp::new();
     let repo = init_repo(&tmp, "r");
-    for name in ["héllo wörld.txt", "日本語.md", "with\ttab.txt", "quote\"d.txt"] {
+    for name in [
+        "héllo wörld.txt",
+        "日本語.md",
+        "with\ttab.txt",
+        "quote\"d.txt",
+    ] {
         write(&repo, name, "x");
     }
     let st = repo.status(&Default::default()).unwrap();
@@ -1045,7 +1527,10 @@ fn unicode_and_special_filenames_round_trip() {
     assert_eq!(got.len(), 4);
     assert!(got.contains(&"héllo wörld.txt".to_string()));
     repo.stage_all().unwrap();
-    assert_eq!(repo.status(&Default::default()).unwrap().staged().count(), 4);
+    assert_eq!(
+        repo.status(&Default::default()).unwrap().staged().count(),
+        4
+    );
 }
 
 #[test]
@@ -1055,7 +1540,11 @@ fn commit_messages_with_special_characters_are_preserved() {
     write(&repo, "a", "1");
     repo.stage_all().unwrap();
     let msg = "subject: \"quoted\" $(rm -rf) `x` ünï\n\nbody line 1\n  indented\n\n- bullet";
-    repo.commit(&CommitOptions { message: msg.into(), ..Default::default() }).unwrap();
+    repo.commit(&CommitOptions {
+        message: msg.into(),
+        ..Default::default()
+    })
+    .unwrap();
     let c = &repo.log(&Default::default()).unwrap()[0];
     assert_eq!(c.subject, "subject: \"quoted\" $(rm -rf) `x` ünï");
     assert_eq!(c.body, "body line 1\n  indented\n\n- bullet");
@@ -1063,22 +1552,37 @@ fn commit_messages_with_special_characters_are_preserved() {
 
 #[test]
 fn credentials_are_redacted_from_errors() {
-    assert_eq!(redact("git clone https://user:s3cret@host.com/r.git x"), "git clone https://***@host.com/r.git x");
-    assert_eq!(redact("ssh://git@host/r and https://a:b@h2/x"), "ssh://***@host/r and https://***@h2/x");
+    assert_eq!(
+        redact("git clone https://user:s3cret@host.com/r.git x"),
+        "git clone https://***@host.com/r.git x"
+    );
+    assert_eq!(
+        redact("ssh://git@host/r and https://a:b@h2/x"),
+        "ssh://***@host/r and https://***@h2/x"
+    );
     assert_eq!(redact("no urls here"), "no urls here");
 
     let tmp = Tmp::new();
     let repo = init_repo(&tmp, "r");
-    let err = repo.ls_remote("https://user:s3cret@127.0.0.1:9/nope.git").unwrap_err();
+    let err = repo
+        .ls_remote("https://user:s3cret@127.0.0.1:9/nope.git")
+        .unwrap_err();
     let text = err.to_string();
     assert!(!text.contains("s3cret"), "leaked secret: {text}");
 }
 
 #[test]
 fn auth_failures_are_classified() {
-    let e = |s: &str| GitError::Command { command: String::new(), code: Some(128), stderr: s.into() };
+    let e = |s: &str| GitError::Command {
+        command: String::new(),
+        code: Some(128),
+        stderr: s.into(),
+    };
     assert!(e("git@host: Permission denied (publickey).").is_auth_failure());
-    assert!(e("fatal: could not read Username for 'https://x': terminal prompts disabled").is_auth_failure());
+    assert!(
+        e("fatal: could not read Username for 'https://x': terminal prompts disabled")
+            .is_auth_failure()
+    );
     assert!(e("remote: HTTP Basic: Access denied").is_auth_failure());
     assert!(!e("fatal: repository not found").is_auth_failure());
     assert!(!GitError::Parse(String::new()).is_auth_failure());

@@ -61,16 +61,29 @@ impl GitClient {
             .stdout_str();
         let mut list = Vec::new();
         for block in out.split("\n\n").filter(|b| !b.trim().is_empty()) {
-            let mut wt = Worktree { path: PathBuf::new(), head: None, branch: None, bare: false, locked: false };
+            let mut wt = Worktree {
+                path: PathBuf::new(),
+                head: None,
+                branch: None,
+                bare: false,
+                locked: false,
+            };
             for line in block.lines() {
                 let (key, value) = line.split_once(' ').unwrap_or((line, ""));
                 match key {
                     "worktree" => wt.path = PathBuf::from(value),
                     "HEAD" => wt.head = Some(value.to_string()),
-                    "branch" => wt.branch = Some(value.strip_prefix("refs/heads/").unwrap_or(value).to_string()),
+                    "branch" => {
+                        wt.branch = Some(
+                            value
+                                .strip_prefix("refs/heads/")
+                                .unwrap_or(value)
+                                .to_string(),
+                        )
+                    }
                     "bare" => wt.bare = true,
                     "locked" => wt.locked = true,
-                    _ => {},
+                    _ => {}
                 }
             }
             list.push(wt);
@@ -79,7 +92,12 @@ impl GitClient {
     }
 
     /// Checks out `rev_or_branch` into a new directory. With `new_branch`, creates that branch.
-    pub fn add_worktree(&self, path: &Path, rev_or_branch: Option<&str>, new_branch: Option<&str>) -> GitResult<()> {
+    pub fn add_worktree(
+        &self,
+        path: &Path,
+        rev_or_branch: Option<&str>,
+        new_branch: Option<&str>,
+    ) -> GitResult<()> {
         for r in [rev_or_branch, new_branch].into_iter().flatten() {
             safe_ref(r)?;
         }
@@ -107,10 +125,14 @@ impl GitClient {
         let out = self.run(Args::new("submodule").arg("status"))?.stdout_str();
         let mut list = Vec::new();
         for line in out.lines() {
-            let Some(marker) = line.chars().next() else { continue };
+            let Some(marker) = line.chars().next() else {
+                continue;
+            };
             let rest = &line[marker.len_utf8()..];
             let mut parts = rest.splitn(2, ' ');
-            let (Some(id), Some(tail)) = (parts.next(), parts.next()) else { continue };
+            let (Some(id), Some(tail)) = (parts.next(), parts.next()) else {
+                continue;
+            };
             let path = tail.rsplit_once(" (").map_or(tail, |(p, _)| p);
             list.push(Submodule {
                 path: path.to_string(),
@@ -149,19 +171,30 @@ impl GitClient {
 
     pub fn config_set(&self, scope: ConfigScope, key: &str, value: &str) -> GitResult<()> {
         safe_ref(key)?;
-        self.run(Args::new("config").arg(scope_flag(scope)).args([key, value]))
-            .map(drop)
+        self.run(
+            Args::new("config")
+                .arg(scope_flag(scope))
+                .args([key, value]),
+        )
+        .map(drop)
     }
 
     pub fn config_unset(&self, scope: ConfigScope, key: &str) -> GitResult<()> {
         safe_ref(key)?;
-        self.run(Args::new("config").arg(scope_flag(scope)).args(["--unset", key]))
-            .map(drop)
+        self.run(
+            Args::new("config")
+                .arg(scope_flag(scope))
+                .args(["--unset", key]),
+        )
+        .map(drop)
     }
 
     /// `(user.name, user.email)` as git would use them for commits.
     pub fn user_identity(&self) -> GitResult<(Option<String>, Option<String>)> {
-        Ok((self.config_get("user.name")?, self.config_get("user.email")?))
+        Ok((
+            self.config_get("user.name")?,
+            self.config_get("user.email")?,
+        ))
     }
 
     /// Sets the commit identity for this repository only.

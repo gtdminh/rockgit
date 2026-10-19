@@ -58,7 +58,11 @@ pub(crate) fn load_recent_repositories_from_path(path: &Path) -> Result<Vec<Repo
     let contents = fs::read_to_string(path)
         .map_err(|error| format!("failed to read {}: {error}", path.display()))?;
 
-    Ok(contents.lines().filter(|line| !line.trim().is_empty()).map(repository_from_path).collect())
+    Ok(contents
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(repository_from_path)
+        .collect())
 }
 
 pub(crate) fn save_recent_repositories_to_path(
@@ -80,7 +84,8 @@ pub(crate) fn save_recent_repositories_to_path(
         contents.push('\n');
     }
 
-    fs::write(path, contents).map_err(|error| format!("failed to write {}: {error}", path.display()))
+    fs::write(path, contents)
+        .map_err(|error| format!("failed to write {}: {error}", path.display()))
 }
 
 fn repository_from_path(path: &str) -> Repository {
@@ -145,7 +150,10 @@ fn parse_config(contents: &str) -> Result<AppConfig, String> {
         }
 
         let Some((key, value)) = line.split_once('=') else {
-            return Err(format!("invalid config entry on line {}: {line}", line_number + 1));
+            return Err(format!(
+                "invalid config entry on line {}: {line}",
+                line_number + 1
+            ));
         };
 
         let key = key.trim();
@@ -205,7 +213,7 @@ fn format_config(config: &AppConfig) -> String {
 fn unquote(value: &str) -> String {
     if value.len() >= 2 && value.starts_with('"') && value.ends_with('"') {
         value[1..value.len() - 1]
-            .replace(r#"\\"# , "\\")
+            .replace(r#"\\"#, "\\")
             .replace(r#"\""#, "\"")
     } else {
         value.to_owned()
@@ -217,121 +225,4 @@ fn escape_config_string(value: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    fn unique_path() -> PathBuf {
-        let stamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        std::env::temp_dir().join(format!("rockgit-persistent-tests-{stamp}"))
-    }
-
-    #[test]
-    fn missing_recents_file_returns_empty_list() {
-        let path = unique_path().join("recents");
-
-        let repositories = load_recent_repositories_from_path(&path).unwrap();
-
-        assert!(repositories.is_empty());
-    }
-
-    #[test]
-    fn save_and_load_round_trip_preserves_order() {
-        let root = unique_path();
-        let path = root.join("recents");
-        let repositories = vec![
-            Repository {
-                name: "repo-b".to_owned(),
-                path: "/tmp/repo-b".to_owned(),
-                branch_count: 3,
-                has_uncommitted_changes: true,
-            },
-            Repository {
-                name: "repo-a".to_owned(),
-                path: "/tmp/repo-a".to_owned(),
-                branch_count: 1,
-                has_uncommitted_changes: false,
-            },
-        ];
-
-        save_recent_repositories_to_path(&path, &repositories).unwrap();
-        let loaded = load_recent_repositories_from_path(&path).unwrap();
-
-        assert_eq!(loaded.len(), 2);
-        assert_eq!(loaded[0].path, "/tmp/repo-b");
-        assert_eq!(loaded[0].name, "repo-b");
-        assert_eq!(loaded[0].branch_count, 0);
-        assert!(!loaded[0].has_uncommitted_changes);
-        assert_eq!(loaded[1].path, "/tmp/repo-a");
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn missing_config_file_returns_none_for_path_loader() {
-        let path = unique_path().join("config");
-
-        let config = load_config_from_path(&path).unwrap();
-
-        assert_eq!(config, None);
-    }
-
-    #[test]
-    fn save_and_load_config_round_trip() {
-        let root = unique_path();
-        let path = root.join("config");
-        let config = AppConfig {
-            autorefresh_time: 30,
-            ai: crate::app::model::AiConfig {
-                provider_cli: AiProviderCli::Copilot,
-                cli_path: "/usr/local/bin/copilot cli".to_owned(),
-            },
-        };
-
-        save_config_to_path(&path, &config).unwrap();
-        let loaded = load_config_from_path(&path).unwrap().unwrap();
-
-        assert_eq!(loaded, config);
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn config_round_trip_escapes_cli_path() {
-        let root = unique_path();
-        let path = root.join("config");
-        let config = AppConfig {
-            autorefresh_time: 5,
-            ai: crate::app::model::AiConfig {
-                provider_cli: AiProviderCli::Anthropic,
-                cli_path: r#"/tmp/cli\with spaces/\"quoted\""#.to_owned(),
-            },
-        };
-
-        save_config_to_path(&path, &config).unwrap();
-        let loaded = load_config_from_path(&path).unwrap().unwrap();
-
-        assert_eq!(loaded, config);
-
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn invalid_provider_is_rejected() {
-        let error = parse_config(
-            r#"autorefresh_time = 10
-
-[ai]
-provider_cli = "invalid"
-cli_path = "/tmp/cli"
-"#,
-        )
-        .unwrap_err();
-
-        assert!(error.contains("invalid ai.provider_cli"));
-    }
-}
-
+mod tests;

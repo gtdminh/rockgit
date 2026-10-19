@@ -65,8 +65,12 @@ impl GitClient {
         let out = self.run(Args::new("remote").arg("-v"))?.stdout_str();
         let mut remotes: Vec<Remote> = Vec::new();
         for line in out.lines() {
-            let Some((name, rest)) = line.split_once('\t') else { continue };
-            let Some((url, kind)) = rest.rsplit_once(' ') else { continue };
+            let Some((name, rest)) = line.split_once('\t') else {
+                continue;
+            };
+            let Some((url, kind)) = rest.rsplit_once(' ') else {
+                continue;
+            };
             let idx = match remotes.iter().position(|r| r.name == name) {
                 Some(i) => i,
                 None => {
@@ -76,12 +80,12 @@ impl GitClient {
                         push_url: String::new(),
                     });
                     remotes.len() - 1
-                },
+                }
             };
             match kind {
                 "(fetch)" => remotes[idx].fetch_url = url.to_string(),
                 "(push)" => remotes[idx].push_url = url.to_string(),
-                _ => {},
+                _ => {}
             }
         }
         Ok(remotes)
@@ -90,18 +94,21 @@ impl GitClient {
     pub fn add_remote(&self, name: &str, url: &str) -> GitResult<()> {
         safe_ref(name)?;
         safe_url(url)?;
-        self.run(Args::new("remote").args(["add", name, url])).map(drop)
+        self.run(Args::new("remote").args(["add", name, url]))
+            .map(drop)
     }
 
     pub fn remove_remote(&self, name: &str) -> GitResult<()> {
         safe_ref(name)?;
-        self.run(Args::new("remote").args(["remove", name])).map(drop)
+        self.run(Args::new("remote").args(["remove", name]))
+            .map(drop)
     }
 
     pub fn rename_remote(&self, old: &str, new: &str) -> GitResult<()> {
         safe_ref(old)?;
         safe_ref(new)?;
-        self.run(Args::new("remote").args(["rename", old, new])).map(drop)
+        self.run(Args::new("remote").args(["rename", old, new]))
+            .map(drop)
     }
 
     /// Changes a remote's URL, e.g. to switch it between HTTPS and SSH. With `push_only`,
@@ -204,7 +211,10 @@ impl GitClient {
         Ok(out
             .lines()
             .filter_map(|l| l.split_once('\t'))
-            .map(|(id, name)| RemoteRef { id: id.to_string(), name: name.to_string() })
+            .map(|(id, name)| RemoteRef {
+                id: id.to_string(),
+                name: name.to_string(),
+            })
             .collect())
     }
 }

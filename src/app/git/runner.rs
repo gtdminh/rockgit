@@ -87,7 +87,8 @@ pub(crate) fn execute(
         .env("GIT_SEQUENCE_EDITOR", "true")
         .env("GIT_MERGE_AUTOEDIT", "no");
     if opts.non_interactive {
-        cmd.env("GIT_TERMINAL_PROMPT", "0").env("GCM_INTERACTIVE", "never");
+        cmd.env("GIT_TERMINAL_PROMPT", "0")
+            .env("GCM_INTERACTIVE", "never");
     }
     if let Some(ssh) = &opts.ssh_command {
         cmd.env("GIT_SSH_COMMAND", ssh);
@@ -102,9 +103,13 @@ pub(crate) fn execute(
         cmd.env(k, v);
     }
 
-    cmd.stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    cmd.stdin(if stdin.is_some() {
+        Stdio::piped()
+    } else {
+        Stdio::null()
+    })
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped());
 
     let mut child = cmd.spawn().map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
@@ -144,11 +149,13 @@ pub(crate) fn execute(
                     let _ = child.kill();
                     let _ = child.wait();
                     // Reader threads are detached: a grandchild (ssh, remote helper) may still hold the pipes.
-                    return Err(GitError::Timeout { command: args.describe() });
+                    return Err(GitError::Timeout {
+                        command: args.describe(),
+                    });
                 }
                 thread::sleep(Duration::from_millis(5));
             }
-        },
+        }
     };
 
     Ok(Output {

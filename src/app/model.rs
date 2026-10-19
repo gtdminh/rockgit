@@ -19,14 +19,17 @@ pub struct AppModel {
     pub branches: Vec<Branch>,
     pub tags: Vec<String>,
     pub active_branch: usize,
+    pub working_tree: WorkingTreeChanges,
     pub commits: Vec<CommitNode>,
     pub selected_commit: usize,
+    pub selected_uncommitted: bool,
     /// Index into `branches`; `None` shows every commit.
     pub branch_filter: Option<usize>,
     pub show_remote: bool,
     pub search_query: String,
     pub last_action: String,
     pub collapsed_sidebar_nodes: BTreeSet<String>,
+    pub collapsed_working_tree_nodes: BTreeSet<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -104,8 +107,46 @@ pub struct LoadedRepo {
     pub branches: Vec<Branch>,
     pub tags: Vec<String>,
     pub active_branch: usize,
+    pub working_tree: WorkingTreeChanges,
     pub commits: Vec<CommitNode>,
     pub selected_commit: usize,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct WorkingTreeChanges {
+    pub files: Vec<WorkingTreeFile>,
+    pub staged_count: usize,
+    pub unstaged_count: usize,
+    pub untracked_count: usize,
+}
+
+impl WorkingTreeChanges {
+    pub fn has_changes(&self) -> bool {
+        !self.files.is_empty()
+    }
+
+    pub fn total_count(&self) -> usize {
+        self.files.len()
+    }
+
+    pub fn staged_files(&self) -> Vec<&WorkingTreeFile> {
+        self.files.iter().filter(|file| file.staged).collect()
+    }
+
+    pub fn unstaged_files(&self) -> Vec<&WorkingTreeFile> {
+        self.files
+            .iter()
+            .filter(|file| file.unstaged || file.untracked)
+            .collect()
+    }
+
+    pub fn changed_files(&self) -> Vec<&WorkingTreeFile> {
+        self.files.iter().filter(|file| !file.untracked).collect()
+    }
+
+    pub fn unversioned_files(&self) -> Vec<&WorkingTreeFile> {
+        self.files.iter().filter(|file| file.untracked).collect()
+    }
 }
 
 /// One row of the branch sidebar.
@@ -130,10 +171,7 @@ pub enum SidebarItem {
         head_copy: bool,
     },
     /// Index into `AppModel::tags`.
-    Tag {
-        index: usize,
-        depth: usize,
-    },
+    Tag { index: usize, depth: usize },
 }
 
 #[derive(Clone, Debug, Default)]
@@ -199,6 +237,44 @@ pub struct FileChange {
     pub status: String,
 }
 
+#[derive(Clone, Debug)]
+pub struct WorkingTreeFile {
+    pub repo_path: String,
+    pub display_path: String,
+    pub status: String,
+    pub staged: bool,
+    pub unstaged: bool,
+    pub untracked: bool,
+}
+
+impl WorkingTreeFile {
+    pub fn staged_status_label(&self) -> String {
+        if self.untracked {
+            return "??".to_owned();
+        }
+
+        self.status
+            .chars()
+            .next()
+            .filter(|ch| !ch.is_whitespace())
+            .map(|ch| ch.to_string())
+            .unwrap_or_else(|| self.status.trim().to_owned())
+    }
+
+    pub fn unstaged_status_label(&self) -> String {
+        if self.untracked {
+            return "??".to_owned();
+        }
+
+        self.status
+            .chars()
+            .nth(1)
+            .filter(|ch| !ch.is_whitespace())
+            .map(|ch| ch.to_string())
+            .unwrap_or_else(|| self.status.trim().to_owned())
+    }
+}
+
 impl AppModel {
     pub fn new() -> Self {
         let (config, config_error) = match persistent::load_config() {
@@ -224,13 +300,16 @@ impl AppModel {
                     branches: Vec::new(),
                     tags: Vec::new(),
                     active_branch: 0,
+                    working_tree: WorkingTreeChanges::default(),
                     commits: Vec::new(),
                     selected_commit: 0,
+                    selected_uncommitted: false,
                     branch_filter: None,
                     show_remote: true,
                     search_query: String::new(),
                     last_action,
                     collapsed_sidebar_nodes: BTreeSet::new(),
+                    collapsed_working_tree_nodes: BTreeSet::new(),
                 }
             }
             Err(message) => Self {
@@ -240,13 +319,16 @@ impl AppModel {
                 branches: Vec::new(),
                 tags: Vec::new(),
                 active_branch: 0,
+                working_tree: WorkingTreeChanges::default(),
                 commits: Vec::new(),
                 selected_commit: 0,
+                selected_uncommitted: false,
                 branch_filter: None,
                 show_remote: true,
                 search_query: String::new(),
                 last_action: format!("Recent repositories unavailable: {message}"),
                 collapsed_sidebar_nodes: BTreeSet::new(),
+                collapsed_working_tree_nodes: BTreeSet::new(),
             },
         }
     }
@@ -264,13 +346,16 @@ impl AppModel {
             branches,
             tags: Vec::new(),
             active_branch: 0,
+            working_tree: sample_data::sample_working_tree_changes(),
             commits,
             selected_commit: 0,
+            selected_uncommitted: false,
             branch_filter: None,
             show_remote: true,
             search_query: String::new(),
             last_action: "Loaded mock repository graph".to_owned(),
             collapsed_sidebar_nodes: BTreeSet::new(),
+            collapsed_working_tree_nodes: BTreeSet::new(),
         }
     }
 
@@ -288,7 +373,14 @@ impl AppModel {
     }
 
     pub fn selected_commit(&self) -> Option<&CommitNode> {
+        if self.selected_uncommitted {
+            return None;
+        }
         self.commits.get(self.selected_commit)
+    }
+
+    pub fn has_uncommitted_changes(&self) -> bool {
+        self.working_tree.has_changes()
     }
 
     pub fn commit_matches_query(&self, commit: &CommitNode) -> bool {
@@ -318,11 +410,46 @@ impl AppModel {
     }
 
     pub fn can_select_newer_commit(&self) -> bool {
-        self.newer_commit_index().is_some()
+        if self.selected_uncommitted {
+            return false;
+        }
+
+        let visible = self.visible_commits();
+        match visible.iter().position(|&i| i == self.selected_commit) {
+            Some(0) => self.has_uncommitted_changes(),
+            Some(position) => position > 0,
+            None => false,
+        }
     }
 
     pub fn can_select_older_commit(&self) -> bool {
+        if self.selected_uncommitted {
+            return !self.visible_commits().is_empty();
+        }
         self.older_commit_index().is_some()
+    }
+
+    pub fn commit_list_len(&self) -> usize {
+        self.visible_commits().len() + usize::from(self.has_uncommitted_changes())
+    }
+
+    pub fn commit_index_for_row(&self, row: usize) -> Option<usize> {
+        let offset = usize::from(self.has_uncommitted_changes());
+        self.visible_commits()
+            .get(row.checked_sub(offset)?)
+            .copied()
+    }
+
+    pub fn selected_commit_row(&self) -> Option<usize> {
+        if self.selected_uncommitted {
+            return self.has_uncommitted_changes().then_some(0);
+        }
+
+        let offset = usize::from(self.has_uncommitted_changes());
+        self.visible_commits()
+            .iter()
+            .position(|&i| i == self.selected_commit)
+            .map(|row| row + offset)
     }
 
     /// Indexes into `commits` that pass the branch filter, newest first.
@@ -410,7 +537,8 @@ impl AppModel {
                 expanded,
             });
             if expanded {
-                items.extend((0..self.tags.len()).map(|index| SidebarItem::Tag { index, depth: 1 }));
+                items
+                    .extend((0..self.tags.len()).map(|index| SidebarItem::Tag { index, depth: 1 }));
             }
         }
 
@@ -447,6 +575,14 @@ impl AppModel {
         true
     }
 
+    pub fn toggle_working_tree_node(&mut self, id: &str) -> bool {
+        if !self.collapsed_working_tree_nodes.remove(id) {
+            self.collapsed_working_tree_nodes.insert(id.to_owned());
+            return false;
+        }
+        true
+    }
+
     pub fn branch_status(branch: &Branch) -> String {
         match (branch.ahead, branch.behind) {
             (0, 0) => "up to date".to_owned(),
@@ -460,7 +596,17 @@ impl AppModel {
         !self.collapsed_sidebar_nodes.contains(id)
     }
 
-    fn push_tree_section(&self, items: &mut Vec<SidebarItem>, id: &str, title: &str, tree: &SidebarTree) {
+    pub(crate) fn working_tree_node_expanded(&self, id: &str) -> bool {
+        !self.collapsed_working_tree_nodes.contains(id)
+    }
+
+    fn push_tree_section(
+        &self,
+        items: &mut Vec<SidebarItem>,
+        id: &str,
+        title: &str,
+        tree: &SidebarTree,
+    ) {
         let expanded = self.sidebar_node_expanded(id);
         items.push(SidebarItem::Section {
             id: id.to_owned(),
@@ -472,7 +618,12 @@ impl AppModel {
         }
     }
 
-    fn append_tree_items(&self, items: &mut Vec<SidebarItem>, nodes: &[SidebarTreeNode], depth: usize) {
+    fn append_tree_items(
+        &self,
+        items: &mut Vec<SidebarItem>,
+        nodes: &[SidebarTreeNode],
+        depth: usize,
+    ) {
         for node in nodes {
             match node {
                 SidebarTreeNode::Group(group) => {
@@ -567,64 +718,14 @@ fn insert_sidebar_branch(
         }
     };
 
-    insert_sidebar_branch(&mut group.children, &child_prefix, &parts[1..], index, title);
+    insert_sidebar_branch(
+        &mut group.children,
+        &child_prefix,
+        &parts[1..],
+        index,
+        title,
+    );
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sidebar_items_build_tree_sections_and_nested_groups() {
-        let model = AppModel::sample();
-        let items = model.sidebar_items();
-
-        assert!(items.iter().any(|item| matches!(
-            item,
-            SidebarItem::Section { title, .. } if title == "HEAD (Current Branch)"
-        )));
-        assert!(items.iter().any(|item| matches!(
-            item,
-            SidebarItem::Section { title, .. } if title == "Local"
-        )));
-        assert!(items.iter().any(|item| matches!(
-            item,
-            SidebarItem::Group { title, .. } if title == "feature"
-        )));
-        assert!(items.iter().any(|item| matches!(
-            item,
-            SidebarItem::Group { title, .. } if title == "origin"
-        )));
-    }
-
-    #[test]
-    fn sidebar_row_prefers_tree_branch_over_head_copy() {
-        let model = AppModel::sample();
-        let row = model.sidebar_row_of_branch(0).unwrap();
-
-        assert!(matches!(
-            model.sidebar_items().get(row),
-            Some(SidebarItem::Branch {
-                head_copy: false,
-                ..
-            })
-        ));
-    }
-
-    #[test]
-    fn toggling_sidebar_node_collapses_and_expands() {
-        let mut model = AppModel::sample();
-
-        assert!(!model.toggle_sidebar_node("section/remote"));
-        assert!(model
-            .sidebar_items()
-            .iter()
-            .all(|item| !matches!(item, SidebarItem::Group { title, .. } if title == "origin")));
-
-        assert!(model.toggle_sidebar_node("section/remote"));
-        assert!(model
-            .sidebar_items()
-            .iter()
-            .any(|item| matches!(item, SidebarItem::Group { title, .. } if title == "origin")));
-    }
-}
+mod tests;

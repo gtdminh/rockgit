@@ -139,7 +139,10 @@ impl GitClient {
         )?;
         Ok(out
             .lines()
-            .map(|c| RebaseStep { action: RebaseAction::Pick, commit: c.to_string() })
+            .map(|c| RebaseStep {
+                action: RebaseAction::Pick,
+                commit: c.to_string(),
+            })
             .collect())
     }
 
@@ -180,7 +183,12 @@ impl GitClient {
     // ---- cherry-pick / revert -----------------------------------------------------------
 
     /// Applies commits onto the current branch. `mainline` selects the parent for merge commits.
-    pub fn cherry_pick(&self, commits: &[String], no_commit: bool, mainline: Option<u32>) -> GitResult<OpOutcome> {
+    pub fn cherry_pick(
+        &self,
+        commits: &[String],
+        no_commit: bool,
+        mainline: Option<u32>,
+    ) -> GitResult<OpOutcome> {
         if commits.is_empty() {
             return Err(GitError::InvalidInput("no commits given".into()));
         }
@@ -207,7 +215,12 @@ impl GitClient {
     }
 
     /// Creates new commits that undo the given commits.
-    pub fn revert(&self, commits: &[String], no_commit: bool, mainline: Option<u32>) -> GitResult<OpOutcome> {
+    pub fn revert(
+        &self,
+        commits: &[String],
+        no_commit: bool,
+        mainline: Option<u32>,
+    ) -> GitResult<OpOutcome> {
         if commits.is_empty() {
             return Err(GitError::InvalidInput("no commits given".into()));
         }

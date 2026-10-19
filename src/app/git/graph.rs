@@ -47,7 +47,7 @@ fn free_slot(lanes: &mut Vec<Option<Lane>>) -> usize {
         None => {
             lanes.push(None);
             lanes.len() - 1
-        },
+        }
     }
 }
 
@@ -73,7 +73,9 @@ fn preferred_main_ref_score(commit: &Commit) -> Option<usize> {
 fn mainline_commit_ids(commits: &[Commit]) -> HashSet<String> {
     let Some((tip_id, _)) = commits
         .iter()
-        .filter_map(|commit| preferred_main_ref_score(commit).map(|score| (commit.id.as_str(), score)))
+        .filter_map(|commit| {
+            preferred_main_ref_score(commit).map(|score| (commit.id.as_str(), score))
+        })
         .min_by_key(|(_, score)| *score)
     else {
         return HashSet::new();
@@ -81,7 +83,12 @@ fn mainline_commit_ids(commits: &[Commit]) -> HashSet<String> {
 
     let first_parent_of: HashMap<&str, &str> = commits
         .iter()
-        .filter_map(|commit| commit.parents.first().map(|parent| (commit.id.as_str(), parent.as_str())))
+        .filter_map(|commit| {
+            commit
+                .parents
+                .first()
+                .map(|parent| (commit.id.as_str(), parent.as_str()))
+        })
         .collect();
     let known_ids: HashSet<&str> = commits.iter().map(|commit| commit.id.as_str()).collect();
 
@@ -156,7 +163,7 @@ pub fn build_graph(commits: Vec<Commit>) -> Vec<GraphRow> {
                 let color = next_color;
                 next_color += 1;
                 (i, color)
-            },
+            }
         };
 
         let incoming: Vec<GraphEdge> = waiting
@@ -171,9 +178,11 @@ pub fn build_graph(commits: Vec<Commit>) -> Vec<GraphRow> {
             .iter()
             .enumerate()
             .filter_map(|(j, l)| {
-                l.as_ref()
-                    .filter(|l| l.id != commit.id)
-                    .map(|l| GraphEdge { from: j, to: j, color: l.color })
+                l.as_ref().filter(|l| l.id != commit.id).map(|l| GraphEdge {
+                    from: j,
+                    to: j,
+                    color: l.color,
+                })
             })
             .collect();
 
@@ -183,18 +192,39 @@ pub fn build_graph(commits: Vec<Commit>) -> Vec<GraphRow> {
 
         let mut outgoing = Vec::new();
         for (n, parent) in commit.parents.iter().enumerate() {
-            if let Some(existing) = lanes.iter().position(|l| l.as_ref().is_some_and(|l| &l.id == parent)) {
+            if let Some(existing) = lanes
+                .iter()
+                .position(|l| l.as_ref().is_some_and(|l| &l.id == parent))
+            {
                 let c = lanes[existing].as_ref().map_or(color, |l| l.color);
-                outgoing.push(GraphEdge { from: lane, to: existing, color: c });
+                outgoing.push(GraphEdge {
+                    from: lane,
+                    to: existing,
+                    color: c,
+                });
             } else if n == 0 {
-                lanes[lane] = Some(Lane { id: parent.clone(), color });
-                outgoing.push(GraphEdge { from: lane, to: lane, color });
+                lanes[lane] = Some(Lane {
+                    id: parent.clone(),
+                    color,
+                });
+                outgoing.push(GraphEdge {
+                    from: lane,
+                    to: lane,
+                    color,
+                });
             } else {
                 let slot = free_slot(&mut lanes);
                 let c = next_color;
                 next_color += 1;
-                lanes[slot] = Some(Lane { id: parent.clone(), color: c });
-                outgoing.push(GraphEdge { from: lane, to: slot, color: c });
+                lanes[slot] = Some(Lane {
+                    id: parent.clone(),
+                    color: c,
+                });
+                outgoing.push(GraphEdge {
+                    from: lane,
+                    to: slot,
+                    color: c,
+                });
             }
         }
 

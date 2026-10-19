@@ -1,4 +1,7 @@
-use crate::app::model::{Branch, CommitNode, FileChange, RefBadge, RefKind, Repository};
+use crate::app::model::{
+    Branch, CommitNode, FileChange, RefBadge, RefKind, Repository, WorkingTreeChanges,
+    WorkingTreeFile,
+};
 
 pub fn sample_repositories() -> Vec<Repository> {
     vec![
@@ -50,6 +53,38 @@ pub fn sample_branches() -> Vec<Branch> {
         branch("origin/feature/search", 0, 1, true, false),
         branch("origin/release/v0.2", 0, 2, true, false),
     ]
+}
+
+pub fn sample_working_tree_changes() -> WorkingTreeChanges {
+    WorkingTreeChanges {
+        files: vec![
+            working_tree_file("src/app/actions.rs", "M ", false, true, false),
+            working_tree_file("src/app/controller.rs", "M ", true, false, false),
+            working_tree_file("src/app/git_service.rs", "MM", true, true, false),
+            working_tree_file("src/app/mod.rs", "MM", true, true, false),
+            working_tree_file("src/app/views/settings.rs", "??", false, false, true),
+        ],
+        staged_count: 3,
+        unstaged_count: 3,
+        untracked_count: 1,
+    }
+}
+
+fn working_tree_file(
+    path: &str,
+    status: &str,
+    staged: bool,
+    unstaged: bool,
+    untracked: bool,
+) -> WorkingTreeFile {
+    WorkingTreeFile {
+        repo_path: path.to_owned(),
+        display_path: path.to_owned(),
+        status: status.to_owned(),
+        staged,
+        unstaged,
+        untracked,
+    }
 }
 
 fn head() -> RefBadge {
@@ -195,7 +230,10 @@ pub fn sample_commits() -> Vec<CommitNode> {
             2,
             vec![8],
             vec![local("hotfix/empty-repo")],
-            vec![file("M", "src/app/controller.rs"), file("A", "tests/empty_repo.rs")],
+            vec![
+                file("M", "src/app/controller.rs"),
+                file("A", "tests/empty_repo.rs"),
+            ],
         ),
         // 7
         commit(
@@ -320,4 +358,3 @@ pub fn sample_commits() -> Vec<CommitNode> {
         ),
     ]
 }
-

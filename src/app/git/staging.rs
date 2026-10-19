@@ -36,10 +36,15 @@ impl GitClient {
     pub fn unstage(&self, paths: &[String]) -> GitResult<()> {
         require_paths(paths)?;
         if self.has_commits()? {
-            self.run(Args::new("restore").arg("--staged").paths(paths)).map(drop)
-        } else {
-            self.run(Args::new("rm").args(["-r", "--cached", "-f", "-q"]).paths(paths))
+            self.run(Args::new("restore").arg("--staged").paths(paths))
                 .map(drop)
+        } else {
+            self.run(
+                Args::new("rm")
+                    .args(["-r", "--cached", "-f", "-q"])
+                    .paths(paths),
+            )
+            .map(drop)
         }
     }
 

@@ -13,3 +13,4 @@
 *.log
 *.rs.bk
 
+/.dirac-cache/symbol-index.db

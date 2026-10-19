@@ -45,4 +45,3 @@ pub fn subscribe() -> Receiver<AppAction> {
 pub fn publish(action: AppAction) {
     bus().publish(action);
 }
-

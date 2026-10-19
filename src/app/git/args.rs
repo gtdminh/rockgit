@@ -22,7 +22,8 @@ impl Args {
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
     {
-        self.0.extend(items.into_iter().map(|s| s.as_ref().to_owned()));
+        self.0
+            .extend(items.into_iter().map(|s| s.as_ref().to_owned()));
         self
     }
 

@@ -83,7 +83,10 @@ impl GitClient {
             .into_iter()
             .next()
             .ok_or_else(|| GitError::InvalidInput(format!("unknown commit {rev}")))?;
-        let files = self.changed_files(&super::diff::DiffTarget::Commit(commit.id.clone()), &Default::default())?;
+        let files = self.changed_files(
+            &super::diff::DiffTarget::Commit(commit.id.clone()),
+            &Default::default(),
+        )?;
         Ok(CommitDetail { commit, files })
     }
 
@@ -101,7 +104,11 @@ impl GitClient {
     /// Resolves any revision expression to a full commit id.
     pub fn rev_parse(&self, rev: &str) -> GitResult<String> {
         safe_ref(rev)?;
-        self.run_str(Args::new("rev-parse").args(["--verify", "--quiet"]).arg(format!("{rev}^{{commit}}")))
+        self.run_str(
+            Args::new("rev-parse")
+                .args(["--verify", "--quiet"])
+                .arg(format!("{rev}^{{commit}}")),
+        )
     }
 
     pub fn merge_base(&self, a: &str, b: &str) -> GitResult<Option<String>> {
@@ -120,7 +127,9 @@ impl GitClient {
                 .args(["--left-right", "--count"])
                 .arg(format!("{a}...{b}")),
         )?;
-        let mut parts = out.split_whitespace().map(|n| n.parse::<u32>().unwrap_or(0));
+        let mut parts = out
+            .split_whitespace()
+            .map(|n| n.parse::<u32>().unwrap_or(0));
         Ok((parts.next().unwrap_or(0), parts.next().unwrap_or(0)))
     }
 

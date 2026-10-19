@@ -68,7 +68,11 @@ impl GitClient {
     }
 
     /// Checks out a new local branch tracking `remote_branch` (e.g. `origin/feature`).
-    pub fn checkout_remote_branch(&self, remote_branch: &str, local_name: Option<&str>) -> GitResult<()> {
+    pub fn checkout_remote_branch(
+        &self,
+        remote_branch: &str,
+        local_name: Option<&str>,
+    ) -> GitResult<()> {
         safe_ref(remote_branch)?;
         let local = match local_name {
             Some(n) => safe_ref(n)?,
@@ -84,7 +88,8 @@ impl GitClient {
     /// Detaches HEAD at a commit, tag or branch tip.
     pub fn checkout_detached(&self, rev: &str) -> GitResult<()> {
         safe_ref(rev)?;
-        self.run(Args::new("switch").args(["--detach", rev])).map(drop)
+        self.run(Args::new("switch").args(["--detach", rev]))
+            .map(drop)
     }
 
     /// Restores files from a revision into the work tree (not the index).
@@ -93,41 +98,55 @@ impl GitClient {
         if paths.is_empty() {
             return Err(GitError::InvalidInput("no paths given".into()));
         }
-        self.run(Args::new("restore").arg(format!("--source={rev}")).paths(paths))
-            .map(drop)
+        self.run(
+            Args::new("restore")
+                .arg(format!("--source={rev}"))
+                .paths(paths),
+        )
+        .map(drop)
     }
 
     /// Deletes a local branch. Without `force`, refuses unmerged branches.
     pub fn delete_branch(&self, name: &str, force: bool) -> GitResult<()> {
         safe_ref(name)?;
-        self.run(Args::new("branch").arg(if force { "-D" } else { "-d" }).arg(name))
-            .map(drop)
+        self.run(
+            Args::new("branch")
+                .arg(if force { "-D" } else { "-d" })
+                .arg(name),
+        )
+        .map(drop)
     }
 
     pub fn rename_branch(&self, old: &str, new: &str) -> GitResult<()> {
         safe_ref(old)?;
         safe_ref(new)?;
-        self.run(Args::new("branch").args(["-m", old, new])).map(drop)
+        self.run(Args::new("branch").args(["-m", old, new]))
+            .map(drop)
     }
 
     /// Sets the upstream of `branch` (e.g. `origin/main`).
     pub fn set_upstream(&self, branch: &str, upstream: &str) -> GitResult<()> {
         safe_ref(branch)?;
         safe_ref(upstream)?;
-        self.run(Args::new("branch").arg(format!("--set-upstream-to={upstream}")).arg(branch))
-            .map(drop)
+        self.run(
+            Args::new("branch")
+                .arg(format!("--set-upstream-to={upstream}"))
+                .arg(branch),
+        )
+        .map(drop)
     }
 
     pub fn unset_upstream(&self, branch: &str) -> GitResult<()> {
         safe_ref(branch)?;
-        self.run(Args::new("branch").args(["--unset-upstream", branch])).map(drop)
+        self.run(Args::new("branch").args(["--unset-upstream", branch]))
+            .map(drop)
     }
 
     /// Local and remote branches that contain `commit`.
     pub fn branches_containing(&self, commit: &str) -> GitResult<Vec<String>> {
         safe_ref(commit)?;
-        let args = Args::new("branch")
-            .args(["--all", "--format=%(refname:short)", "--contains", commit]);
+        let args =
+            Args::new("branch").args(["--all", "--format=%(refname:short)", "--contains", commit]);
         Ok(self
             .run(args)?
             .stdout_str()
