@@ -4,15 +4,19 @@ use std::hash::{Hash, Hasher};
 
 use cacao::button::Button;
 use cacao::color::Color;
+use cacao::foundation::NSString;
 use cacao::input::{TextField, TextFieldDelegate};
+use cacao::objc::{msg_send, sel, sel_impl};
 use cacao::select::Select;
 use cacao::switch::Switch;
 use cacao::text::Label;
+use font_awesome::{CLOUD_DOWNLOAD_ALT, DOWNLOAD, SYNC, UPLOAD};
 
 use crate::app::{
     actions::{AppAction, GitOperation},
     model::AppModel,
     send,
+    views::theme::font_awesome_font,
 };
 
 #[derive(Debug, Default)]
@@ -40,7 +44,27 @@ pub struct Toolbar {
 }
 
 fn operation_button(operation: GitOperation) -> Button {
-    let mut button = Button::new(operation.label());
+    let icon = match operation {
+        GitOperation::Fetch => CLOUD_DOWNLOAD_ALT,
+        GitOperation::Pull => DOWNLOAD,
+        GitOperation::Push => UPLOAD,
+        GitOperation::Refresh => SYNC,
+    };
+    let font = font_awesome_font(14.);
+    let title = font
+        .as_ref()
+        .map(|_| icon.to_string())
+        .unwrap_or_else(|| operation.label().to_owned());
+    let mut button = Button::new(&title);
+    if let Some(font) = font {
+        button.set_font(font);
+    }
+    button.objc.with_mut(|obj| unsafe {
+        let tooltip = NSString::new(operation.label());
+        let accessibility_label = NSString::new(operation.label());
+        let _: () = msg_send![obj, setToolTip: tooltip];
+        let _: () = msg_send![obj, setAccessibilityLabel: accessibility_label];
+    });
     button.set_action(move || send(AppAction::RunGitOperation(operation)));
     button
 }

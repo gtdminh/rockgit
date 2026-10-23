@@ -5,6 +5,7 @@ mod git;
 mod git_service;
 mod model;
 pub(crate) mod persistent;
+#[cfg(test)]
 mod sample_data;
 mod views;
 
@@ -182,6 +183,7 @@ impl RockGitApp {
                 .leading
                 .constraint_equal_to(&content.leading)
                 .offset(12.),
+            toolbar.fetch.width.constraint_equal_to_constant(32.),
             toolbar
                 .pull
                 .top
@@ -192,6 +194,7 @@ impl RockGitApp {
                 .leading
                 .constraint_equal_to(&toolbar.fetch.trailing)
                 .offset(6.),
+            toolbar.pull.width.constraint_equal_to_constant(32.),
             toolbar
                 .push
                 .top
@@ -202,6 +205,7 @@ impl RockGitApp {
                 .leading
                 .constraint_equal_to(&toolbar.pull.trailing)
                 .offset(6.),
+            toolbar.push.width.constraint_equal_to_constant(32.),
             toolbar
                 .refresh
                 .top
@@ -212,6 +216,7 @@ impl RockGitApp {
                 .leading
                 .constraint_equal_to(&toolbar.push.trailing)
                 .offset(6.),
+            toolbar.refresh.width.constraint_equal_to_constant(32.),
             toolbar
                 .search
                 .top

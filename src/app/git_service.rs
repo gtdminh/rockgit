@@ -12,7 +12,7 @@ use crate::app::{
     bus,
     git::{
         self, ChangeKind, CleanOptions, CommitOptions, DecorationKind, GitClient, LogOptions,
-        FetchOptions, PullOptions, PushOptions, StatusOptions,
+        FetchOptions, LogOrder, PullOptions, PushOptions, StatusOptions,
     },
     model::{
         AppConfig, Branch, CommitNode, FileChange, LoadedRepo, RefBadge, RefKind,
@@ -264,13 +264,22 @@ fn load_repo(path: &Path) -> Result<(LoadedRepo, Vec<String>), String> {
     let status = client
         .status(&StatusOptions::default())
         .map_err(|e| e.to_string())?;
-    let rows = client
-        .graph(&LogOptions {
-            all: true,
-            max_count: Some(MAX_COMMITS),
-            ..Default::default()
-        })
-        .map_err(|e| e.to_string())?;
+    let branch_refs: Vec<String> = git_branches
+        .iter()
+        .map(|branch| branch.full_name.clone())
+        .collect();
+    let rows = if branch_refs.is_empty() {
+        Vec::new()
+    } else {
+        client
+            .graph(&LogOptions {
+                revs: branch_refs,
+                max_count: Some(MAX_COMMITS),
+                order: LogOrder::Date,
+                ..Default::default()
+            })
+            .map_err(|e| e.to_string())?
+    };
     let head = client.head().map_err(|e| e.to_string())?;
 
     let ids: Vec<String> = rows.iter().map(|row| row.commit.id.clone()).collect();
@@ -291,6 +300,7 @@ fn load_repo(path: &Path) -> Result<(LoadedRepo, Vec<String>), String> {
                 author: commit.author_name.clone(),
                 relative_time: relative_time(commit.author_time),
                 lane: row.lane,
+                color: row.color,
                 parents: commit
                     .parents
                     .iter()
@@ -369,13 +379,9 @@ fn working_tree_changes(status: &git::RepoStatus) -> WorkingTreeChanges {
                     .map(|original| format!("{original} → {}", entry.path))
                     .unwrap_or_else(|| entry.path.clone()),
                 status: entry.code.clone(),
-                staged: entry_staged(entry),
-                unstaged: entry_unstaged(entry),
                 untracked: entry.kind == git::EntryKind::Untracked,
             })
             .collect(),
-        staged_count: status.staged().count(),
-        unstaged_count: status.unstaged().count(),
         untracked_count: status.untracked().count(),
     }
 }
@@ -444,13 +450,6 @@ fn entry_staged(entry: &git::StatusEntry) -> bool {
         entry.kind,
         git::EntryKind::Ordinary | git::EntryKind::Renamed | git::EntryKind::Unmerged
     ) && entry.index != git::ChangeKind::Unmodified
-}
-
-fn entry_unstaged(entry: &git::StatusEntry) -> bool {
-    matches!(
-        entry.kind,
-        git::EntryKind::Ordinary | git::EntryKind::Renamed | git::EntryKind::Unmerged
-    ) && entry.worktree != git::ChangeKind::Unmodified
 }
 
 fn commit_files(path: &Path, id: &str) -> Result<Vec<FileChange>, String> {

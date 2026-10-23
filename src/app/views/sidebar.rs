@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use cacao::button::Button;
 use cacao::filesystem::FileSelectPanel;
 use cacao::listview::{ListView, ListViewDelegate, ListViewRow};
+use font_awesome::strs::{ANGLE_DOWN, ANGLE_RIGHT, CODE_BRANCH, FOLDER, FOLDER_OPEN, TAG};
 
 use crate::app::{
     actions::AppAction,
@@ -122,8 +123,8 @@ impl ListViewDelegate for BranchList {
                     SidebarItem::Section {
                         title, expanded, ..
                     } => {
-                        let arrow = if *expanded { "▾" } else { "▸" };
-                        cell.configure_header(&format!("{arrow} {title}"));
+                        let arrow = if *expanded { ANGLE_DOWN } else { ANGLE_RIGHT };
+                        cell.configure_header(title, arrow);
                     }
                     SidebarItem::Group {
                         title,
@@ -131,14 +132,8 @@ impl ListViewDelegate for BranchList {
                         expanded,
                         ..
                     } => {
-                        let arrow = if *expanded { "▾" } else { "▸" };
-                        let indent = "  ".repeat(*depth);
-                        cell.configure_tree_item(
-                            &format!("{indent}{arrow} {title}"),
-                            false,
-                            true,
-                            None,
-                        );
+                        let folder = if *expanded { FOLDER_OPEN } else { FOLDER };
+                        cell.configure_tree_item(title, *depth, folder, false, true, None);
                     }
                     SidebarItem::Branch {
                         index,
@@ -146,32 +141,20 @@ impl ListViewDelegate for BranchList {
                         depth,
                         head_copy,
                     } => {
-                        let indent = "  ".repeat(*depth);
                         let branch = &model.branches[*index];
-                        let icon = if *head_copy || branch.is_current {
-                            "✦"
-                        } else if branch.is_remote {
-                            "⎇"
-                        } else {
-                            "◦"
-                        };
                         let selected = model.active_branch == *index && !*head_copy;
                         cell.configure_tree_item(
-                            &format!("{indent}{icon} {title}"),
+                            title,
+                            *depth,
+                            CODE_BRANCH,
                             selected,
                             branch.is_current,
                             Some(&branch.name),
                         );
                     }
                     SidebarItem::Tag { index, depth } => {
-                        let indent = "  ".repeat(*depth);
                         if let Some(tag) = model.tags.get(*index) {
-                            cell.configure_tree_item(
-                                &format!("{indent}◇ {tag}"),
-                                false,
-                                false,
-                                None,
-                            );
+                            cell.configure_tree_item(tag, *depth, TAG, false, false, None);
                         }
                     }
                 }

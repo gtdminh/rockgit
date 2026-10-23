@@ -210,6 +210,42 @@ impl AppController {
         model.branch_filter = filter.filter(|&i| i < model.branches.len());
 
         let visible = model.visible_commits();
+        if let Some(branch) = model.branch_filter.and_then(|i| model.branches.get(i)) {
+            let branch_name = branch.name.clone();
+            let repo_path = model
+                .repositories
+                .get(model.active_repo)
+                .map(|repo| repo.path.as_str())
+                .unwrap_or("<unknown>");
+            let tip_matches: Vec<&str> = model
+                .commits
+                .iter()
+                .filter(|commit| commit.refs.iter().any(|r| r.label == branch_name))
+                .map(|commit| commit.id.as_str())
+                .collect();
+            eprintln!(
+                "[branch-history] repo={} branch={} tip_matches={:?} included={}/{}",
+                repo_path,
+                branch_name,
+                tip_matches,
+                visible.len(),
+                model.commits.len()
+            );
+            for &index in &visible {
+                let commit = &model.commits[index];
+                let parents: Vec<&str> = commit
+                    .parents
+                    .iter()
+                    .filter_map(|&parent| model.commits.get(parent))
+                    .map(|parent| parent.id.as_str())
+                    .collect();
+                let refs: Vec<&str> = commit.refs.iter().map(|r| r.label.as_str()).collect();
+                eprintln!(
+                    "[branch-history] include id={} parents={:?} refs={:?} subject={:?}",
+                    commit.id, parents, refs, commit.summary
+                );
+            }
+        }
         if !visible.contains(&model.selected_commit) {
             if let Some(&first) = visible.first() {
                 self.select_commit(model, first);

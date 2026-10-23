@@ -7,6 +7,7 @@ name = "RockGit"
 version = "0.1.0"
 dependencies = [
  "cacao",
+ "font-awesome",
  "objc",
  "objc_id",
 ]
@@ -35,8 +36,6 @@ checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
 [[package]]
 name = "block"
 version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d8c1fef690941d3e7788d328517591fecc684c084084702d6ff1641e993699a"
 
 [[package]]
 name = "block2"
@@ -143,6 +142,12 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "font-awesome"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d3e6fec1d959a3345ad64c4721c5e6f6198082953c382c10eb1b5eb22f1f4372"
 
 [[package]]
 name = "foreign-types"

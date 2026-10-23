@@ -1,6 +1,63 @@
 use super::*;
 
 #[test]
+fn load_repo_excludes_commits_reachable_only_from_agent_refs() {
+    let root = std::env::temp_dir().join(format!(
+        "rockgit-agent-ref-test-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let run_git = |args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&root)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout).unwrap().trim().to_owned()
+    };
+
+    run_git(&["init", "-b", "main"]);
+    run_git(&["config", "user.name", "Test User"]);
+    run_git(&["config", "user.email", "test@example.com"]);
+    std::fs::write(root.join("base.txt"), "base").unwrap();
+    run_git(&["add", "base.txt"]);
+    run_git(&["commit", "-m", "branch commit"]);
+    let branch_tip = run_git(&["rev-parse", "HEAD"]);
+    run_git(&["branch", "feature/onboarding"]);
+
+    std::fs::write(root.join("checkpoint.txt"), "checkpoint").unwrap();
+    run_git(&["add", "checkpoint.txt"]);
+    run_git(&["commit", "-m", "Agent host session checkpoint"]);
+    let checkpoint = run_git(&["rev-parse", "HEAD"]);
+    run_git(&["reset", "--hard", &branch_tip]);
+    run_git(&[
+        "update-ref",
+        "refs/agents/test-session/checkpoints/turn/1",
+        &checkpoint,
+    ]);
+
+    let (repo, _) = load_repo(&root).unwrap();
+    let subjects: Vec<&str> = repo
+        .commits
+        .iter()
+        .map(|commit| commit.summary.as_str())
+        .collect();
+    assert_eq!(subjects, ["branch commit"]);
+
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn working_tree_changes_ignores_ignored_entries_and_formats_renames() {
     let status = git::RepoStatus {
         entries: vec![
@@ -43,13 +100,12 @@ fn working_tree_changes_ignores_ignored_entries_and_formats_renames() {
     let changes = working_tree_changes(&status);
 
     assert_eq!(changes.files.len(), 3);
-    assert_eq!(changes.staged_count, 2);
     assert_eq!(changes.untracked_count, 1);
     assert_eq!(
         changes.files[2].display_path,
         "src/app/views/inspector.rs → src/app/views/details.rs"
     );
-    assert!(changes.files[0].staged);
+    assert_eq!(changes.files[0].status, "M ");
     assert!(changes.files[1].untracked);
 }
 

@@ -96,8 +96,12 @@ fn row_primitives(
             };
             let parent = &all[parent_index];
             // Branch edges run down the child's lane, merge edges down the parent's lane.
-            let edge_lane = child.lane.max(parent.lane);
-            let rgb = lane_rgb(edge_lane);
+            let (edge_lane, edge_color) = if child.lane >= parent.lane {
+                (child.lane, child.color)
+            } else {
+                (parent.lane, parent.color)
+            };
+            let rgb = lane_rgb(edge_color);
             let is_mainline =
                 child.is_mainline && parent.is_mainline && child.lane == 0 && parent.lane == 0;
             let (xc, xp, xe) = (geo.x(child.lane), geo.x(parent.lane), geo.x(edge_lane));
@@ -158,11 +162,12 @@ fn graph_image(
     geo: GraphGeometry,
     prims: Vec<Prim>,
     node_lane: usize,
+    node_color: usize,
     is_head: bool,
     is_mainline: bool,
 ) -> Image {
     let node_x = geo.x(node_lane);
-    let node_rgb = lane_rgb(node_lane);
+    let node_rgb = lane_rgb(node_color);
     let size = (geo.width, ROW_HEIGHT);
 
     Image::draw(
@@ -276,6 +281,7 @@ fn working_tree_graph_image(geo: GraphGeometry) -> Image {
             rgb: lane_rgb(0),
             is_mainline: true,
         }],
+        0,
         0,
         false,
         true,
@@ -465,7 +471,14 @@ impl ListViewDelegate for CommitList {
                 let summary = format!("{marker}{}", commit.summary);
 
                 cell.configure(&CommitRowData {
-                    graph: graph_image(geo, prims, commit.lane, commit.is_head, commit.is_mainline),
+                    graph: graph_image(
+                        geo,
+                        prims,
+                        commit.lane,
+                        commit.color,
+                        commit.is_head,
+                        commit.is_mainline,
+                    ),
                     graph_width: geo.width,
                     pills: &pills_for(commit, model.show_remote),
                     summary: &summary,

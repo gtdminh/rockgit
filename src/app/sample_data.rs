@@ -58,31 +58,21 @@ pub fn sample_branches() -> Vec<Branch> {
 pub fn sample_working_tree_changes() -> WorkingTreeChanges {
     WorkingTreeChanges {
         files: vec![
-            working_tree_file("src/app/actions.rs", "M ", false, true, false),
-            working_tree_file("src/app/controller.rs", "M ", true, false, false),
-            working_tree_file("src/app/git_service.rs", "MM", true, true, false),
-            working_tree_file("src/app/mod.rs", "MM", true, true, false),
-            working_tree_file("src/app/views/settings.rs", "??", false, false, true),
+            working_tree_file("src/app/actions.rs", "M ", false),
+            working_tree_file("src/app/controller.rs", "M ", false),
+            working_tree_file("src/app/git_service.rs", "MM", false),
+            working_tree_file("src/app/mod.rs", "MM", false),
+            working_tree_file("src/app/views/settings.rs", "??", true),
         ],
-        staged_count: 3,
-        unstaged_count: 3,
         untracked_count: 1,
     }
 }
 
-fn working_tree_file(
-    path: &str,
-    status: &str,
-    staged: bool,
-    unstaged: bool,
-    untracked: bool,
-) -> WorkingTreeFile {
+fn working_tree_file(path: &str, status: &str, untracked: bool) -> WorkingTreeFile {
     WorkingTreeFile {
         repo_path: path.to_owned(),
         display_path: path.to_owned(),
         status: status.to_owned(),
-        staged,
-        unstaged,
         untracked,
     }
 }
@@ -141,6 +131,7 @@ fn commit(
         author: author.to_owned(),
         relative_time: relative_time.to_owned(),
         lane,
+        color: lane,
         parents,
         refs,
         files,

@@ -9,6 +9,7 @@ fn commit_with_refs(refs: Vec<RefBadge>) -> CommitNode {
         author: "author".to_owned(),
         relative_time: "now".to_owned(),
         lane: 0,
+        color: 0,
         parents: Vec::new(),
         refs,
         files: Vec::new(),

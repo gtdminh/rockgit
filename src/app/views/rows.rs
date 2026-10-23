@@ -1,6 +1,6 @@
 use cacao::button::Button;
 use cacao::color::Color;
-use cacao::foundation::{NSString, id, nil};
+use cacao::foundation::{id, nil, NSString};
 use cacao::image::{Image, ImageView};
 use cacao::layout::{Layout, LayoutConstraint};
 use cacao::objc::{msg_send, sel, sel_impl};
@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use crate::app::{
     actions::AppAction,
     send,
-    views::theme::{Rgb, color},
+    views::theme::{color, font_awesome_font, Rgb},
 };
 
 pub const ROW_HEIGHT: f64 = 28.;
@@ -28,6 +28,8 @@ pub const WORKING_TREE_ROW_HEIGHT: f64 = 26.;
 pub struct SidebarRow {
     view: Option<View>,
     title: Label,
+    icon: Label,
+    tree_title: Label,
     subtitle: Label,
 }
 
@@ -48,12 +50,19 @@ impl SidebarRow {
         }
     }
 
-    pub fn configure_header(&self, title: &str) {
+    pub fn configure_header(&self, title: &str, icon: &str) {
         if let Some(view) = &self.view {
             view.set_background_color(Color::Clear);
         }
-        self.title.set_font(&Font::bold_system(10.));
-        self.title.set_text(title);
+        self.title.set_hidden(true);
+        self.icon.set_hidden(false);
+        self.tree_title.set_hidden(false);
+        self.icon
+            .set_font(&font_awesome_font(10.).unwrap_or_else(|| Font::system(10.)));
+        self.icon.set_text_color(Color::SystemGray);
+        self.icon.set_text(icon);
+        self.tree_title.set_font(&Font::bold_system(10.));
+        self.tree_title.set_text(title);
         self.subtitle.set_hidden(true);
         self.subtitle.set_text("");
         self.set_tooltip(None);
@@ -67,6 +76,9 @@ impl SidebarRow {
                 Color::Clear
             });
         }
+        self.title.set_hidden(false);
+        self.icon.set_hidden(true);
+        self.tree_title.set_hidden(true);
         self.title.set_font(&if current {
             Font::bold_system(13.)
         } else {
@@ -81,6 +93,8 @@ impl SidebarRow {
     pub fn configure_tree_item(
         &self,
         title: &str,
+        depth: usize,
+        icon: &str,
         selected: bool,
         emphasized: bool,
         tooltip: Option<&str>,
@@ -92,12 +106,20 @@ impl SidebarRow {
                 Color::Clear
             });
         }
-        self.title.set_font(&if selected || emphasized {
+        self.title.set_hidden(true);
+        self.icon.set_hidden(false);
+        self.tree_title.set_hidden(false);
+        self.icon
+            .set_font(&font_awesome_font(11.).unwrap_or_else(|| Font::system(11.)));
+        self.icon.set_text_color(Color::SystemGray);
+        self.icon.set_text(&format!("{}{icon}", "  ".repeat(depth)));
+        self.tree_title.set_font(&if selected || emphasized {
             Font::bold_system(12.)
         } else {
             Font::system(12.)
         });
-        self.title.set_text(title);
+        self.tree_title
+            .set_text(&format!("{}{title}", "  ".repeat(depth)));
         self.subtitle.set_hidden(true);
         self.subtitle.set_text("");
         self.set_tooltip(tooltip);
@@ -109,10 +131,14 @@ impl ViewDelegate for SidebarRow {
 
     fn did_load(&mut self, view: View) {
         view.add_subview(&self.title);
+        view.add_subview(&self.icon);
+        view.add_subview(&self.tree_title);
         view.add_subview(&self.subtitle);
         self.view = Some(view.clone_as_handle());
 
         self.title.set_line_break_mode(LineBreakMode::TruncateTail);
+        self.tree_title
+            .set_line_break_mode(LineBreakMode::TruncateTail);
         self.subtitle
             .set_line_break_mode(LineBreakMode::TruncateTail);
         self.subtitle.set_font(&Font::system(10.));
@@ -120,11 +146,28 @@ impl ViewDelegate for SidebarRow {
 
         LayoutConstraint::activate(&[
             self.title.top.constraint_equal_to(&view.top).offset(6.),
+            self.icon.top.constraint_equal_to(&view.top).offset(6.),
+            self.tree_title
+                .top
+                .constraint_equal_to(&view.top)
+                .offset(6.),
             self.title
                 .leading
                 .constraint_equal_to(&view.leading)
                 .offset(12.),
+            self.icon
+                .leading
+                .constraint_equal_to(&view.leading)
+                .offset(12.),
+            self.tree_title
+                .leading
+                .constraint_equal_to(&view.leading)
+                .offset(30.),
             self.title
+                .trailing
+                .constraint_equal_to(&view.trailing)
+                .offset(-12.),
+            self.tree_title
                 .trailing
                 .constraint_equal_to(&view.trailing)
                 .offset(-12.),

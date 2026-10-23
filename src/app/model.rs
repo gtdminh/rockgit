@@ -115,8 +115,6 @@ pub struct LoadedRepo {
 #[derive(Clone, Debug, Default)]
 pub struct WorkingTreeChanges {
     pub files: Vec<WorkingTreeFile>,
-    pub staged_count: usize,
-    pub unstaged_count: usize,
     pub untracked_count: usize,
 }
 
@@ -127,17 +125,6 @@ impl WorkingTreeChanges {
 
     pub fn total_count(&self) -> usize {
         self.files.len()
-    }
-
-    pub fn staged_files(&self) -> Vec<&WorkingTreeFile> {
-        self.files.iter().filter(|file| file.staged).collect()
-    }
-
-    pub fn unstaged_files(&self) -> Vec<&WorkingTreeFile> {
-        self.files
-            .iter()
-            .filter(|file| file.unstaged || file.untracked)
-            .collect()
     }
 
     pub fn changed_files(&self) -> Vec<&WorkingTreeFile> {
@@ -210,6 +197,8 @@ pub struct CommitNode {
     pub author: String,
     pub relative_time: String,
     pub lane: usize,
+    /// Stable per-branch-line colour index.
+    pub color: usize,
     pub parents: Vec<usize>,
     pub refs: Vec<RefBadge>,
     pub files: Vec<FileChange>,
@@ -242,8 +231,6 @@ pub struct WorkingTreeFile {
     pub repo_path: String,
     pub display_path: String,
     pub status: String,
-    pub staged: bool,
-    pub unstaged: bool,
     pub untracked: bool,
 }
 
@@ -581,15 +568,6 @@ impl AppModel {
             return false;
         }
         true
-    }
-
-    pub fn branch_status(branch: &Branch) -> String {
-        match (branch.ahead, branch.behind) {
-            (0, 0) => "up to date".to_owned(),
-            (ahead, 0) => format!("ahead {ahead}"),
-            (0, behind) => format!("behind {behind}"),
-            (ahead, behind) => format!("ahead {ahead} • behind {behind}"),
-        }
     }
 
     fn sidebar_node_expanded(&self, id: &str) -> bool {

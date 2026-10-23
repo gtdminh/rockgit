@@ -70,14 +70,21 @@ fn preferred_main_ref_score(commit: &Commit) -> Option<usize> {
         .min()
 }
 
+/// Leftmost line: first-parent chain of the checked-out commit, else of main/master/trunk.
 fn mainline_commit_ids(commits: &[Commit]) -> HashSet<String> {
-    let Some((tip_id, _)) = commits
+    let head_tip = commits
         .iter()
-        .filter_map(|commit| {
-            preferred_main_ref_score(commit).map(|score| (commit.id.as_str(), score))
-        })
-        .min_by_key(|(_, score)| *score)
-    else {
+        .find(|commit| commit.refs.iter().any(|r| r.is_head))
+        .map(|commit| commit.id.as_str());
+    let Some(tip_id) = head_tip.or_else(|| {
+        commits
+            .iter()
+            .filter_map(|commit| {
+                preferred_main_ref_score(commit).map(|score| (commit.id.as_str(), score))
+            })
+            .min_by_key(|(_, score)| *score)
+            .map(|(id, _)| id)
+    }) else {
         return HashSet::new();
     };
 
@@ -251,11 +258,11 @@ pub fn build_graph(commits: Vec<Commit>) -> Vec<GraphRow> {
 }
 
 impl GitClient {
-    /// History with lane layout, ready for rendering. Defaults to topological order.
+    /// History with lane layout, ready for rendering. Defaults to date order.
     pub fn graph(&self, o: &LogOptions) -> GitResult<Vec<GraphRow>> {
         let mut o = o.clone();
         if o.order == super::history::LogOrder::Plain {
-            o.order = super::history::LogOrder::Topo;
+            o.order = super::history::LogOrder::Date;
         }
         Ok(build_graph(self.log(&o)?))
     }

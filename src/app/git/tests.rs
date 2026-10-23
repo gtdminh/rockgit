@@ -602,7 +602,7 @@ fn graph_layout_branch_and_merge() {
 }
 
 #[test]
-fn graph_layout_keeps_main_branch_on_leftmost_lane() {
+fn graph_layout_keeps_head_branch_on_leftmost_lane() {
     let rows = build_graph(vec![
         fake_commit_with_refs(
             "F2",
@@ -631,14 +631,14 @@ fn graph_layout_keeps_main_branch_on_leftmost_lane() {
 
     let by_id = |id: &str| rows.iter().find(|row| row.commit.id == id).unwrap();
 
-    assert_eq!(by_id("M").lane, 0);
-    assert!(by_id("M").is_mainline);
-    assert_eq!(by_id("B").lane, 0);
-    assert!(by_id("B").is_mainline);
+    assert_eq!(by_id("F2").lane, 0);
+    assert!(by_id("F2").is_mainline);
+    assert_eq!(by_id("F1").lane, 0);
+    assert!(by_id("F1").is_mainline);
     assert_eq!(by_id("A").lane, 0);
     assert!(by_id("A").is_mainline);
-    assert_ne!(by_id("F1").lane, 0);
-    assert!(!by_id("F1").is_mainline);
+    assert_ne!(by_id("M").lane, 0);
+    assert!(!by_id("M").is_mainline);
 }
 
 #[test]
